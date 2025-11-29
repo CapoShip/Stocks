@@ -9,24 +9,14 @@ import {
   Activity, DollarSign, Clock, BarChart2, List, Plus, Trash2, RefreshCw, Briefcase, Globe
 } from 'lucide-react';
 
-// --- CONFIGURATION API (Financial Modeling Prep) ---
-const API_KEY = 'lKELuWLzyvcqpQKuHqGuSCzCL5kdHdgM'; 
+// --- CONFIGURATION API (Finnhub) ---
+const API_KEY = 'd4kji6hr01qvpdokl27gd4kji6hr01qvpdokl280'; 
 
 const NEWS_FEED = [
   { id: 1, title: "Marchés : Le S&P 500 atteint un nouveau sommet", source: "Bloomberg", time: "1h" },
   { id: 2, title: "Tech : Les résultats trimestriels dépassent les attentes", source: "Reuters", time: "3h" },
   { id: 3, title: "Économie : L'inflation ralentit plus vite que prévu", source: "Financial Times", time: "5h" },
 ];
-
-// Fonction pour formater les gros chiffres (Milliards/Trillions)
-const formatNumber = (num) => {
-  if (!num) return '---';
-  const n = parseFloat(num);
-  if (n >= 1.0e+12) return (n / 1.0e+12).toFixed(2) + "T";
-  if (n >= 1.0e+9) return (n / 1.0e+9).toFixed(2) + "B";
-  if (n >= 1.0e+6) return (n / 1.0e+6).toFixed(2) + "M";
-  return n.toFixed(2);
-};
 
 export default function StockDashboard() {
   const [selectedStock, setSelectedStock] = useState('AAPL'); 
@@ -44,7 +34,7 @@ export default function StockDashboard() {
     changePercent: 0,
     mktCap: '---',
     sector: '---',
-    description: ''
+    logo: null
   });
 
   const fetchStockData = async (symbol) => {
@@ -52,59 +42,62 @@ export default function StockDashboard() {
     setErrorMsg(null);
     
     try {
-      // 1. Récupérer le Profil et le Prix (Quote + Profile)
-      const quoteRes = await fetch(`https://financialmodelingprep.com/api/v3/quote/${symbol}?apikey=${API_KEY}`);
+      // 1. Récupérer le Prix (Quote)
+      const quoteRes = await fetch(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${API_KEY}`);
       const quoteData = await quoteRes.json();
 
-      // --- VÉRIFICATION DES ERREURS API (Le Fix est ici) ---
-      if (quoteData['Error Message']) {
-        throw new Error("Erreur API : " + quoteData['Error Message']);
-      }
-      if (!Array.isArray(quoteData)) {
-        throw new Error("Format de réponse invalide. Vérifiez votre clé API.");
-      }
-      if (quoteData.length === 0) {
-        throw new Error("Symbole introuvable.");
+      if (!quoteData || quoteData.c === 0) {
+        throw new Error("Symbole introuvable ou marché fermé.");
       }
 
-      // L'endpoint 'profile' donne le secteur, mkt cap, etc.
-      const profileRes = await fetch(`https://financialmodelingprep.com/api/v3/profile/${symbol}?apikey=${API_KEY}`);
+      // 2. Récupérer le Profil (Profile2)
+      const profileRes = await fetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${symbol}&token=${API_KEY}`);
       const profileData = await profileRes.json();
 
-      const quote = quoteData[0];
-      // Sécurité supplémentaire pour le profil
-      const profile = (Array.isArray(profileData) && profileData.length > 0) ? profileData[0] : {};
+      // Formater la Capitalisation (Finnhub donne en Millions)
+      let mktCapFormatted = '---';
+      if (profileData.marketCapitalization) {
+          const mktCap = profileData.marketCapitalization; // En millions
+          if (mktCap >= 1000000) mktCapFormatted = (mktCap / 1000000).toFixed(2) + "T";
+          else if (mktCap >= 1000) mktCapFormatted = (mktCap / 1000).toFixed(2) + "B";
+          else mktCapFormatted = mktCap.toFixed(2) + "M";
+      }
 
       setStockInfo({
-        symbol: quote.symbol,
-        name: quote.name || symbol,
-        price: quote.price,
-        change: quote.change,
-        changePercent: quote.changesPercentage,
-        mktCap: formatNumber(quote.marketCap),
-        sector: profile.sector || 'N/A',
-        description: profile.description || 'Pas de description disponible.'
+        symbol: symbol,
+        name: profileData.name || symbol,
+        price: quoteData.c, // Current price
+        change: quoteData.d, // Change
+        changePercent: quoteData.dp, // Percent change
+        mktCap: mktCapFormatted,
+        sector: profileData.finnhubIndustry || 'N/A',
+        logo: profileData.logo
       });
 
-      // 2. Récupérer l'historique pour le graphique
-      const historyRes = await fetch(`https://financialmodelingprep.com/api/v3/historical-price-full/${symbol}?timeseries=30&apikey=${API_KEY}`);
-      const historyData = await historyRes.json();
+      // 3. Récupérer l'historique (Candles)
+      // On demande les 30 derniers jours
+      const end = Math.floor(Date.now() / 1000);
+      const start = end - (30 * 24 * 60 * 60);
+      const candleRes = await fetch(`https://finnhub.io/api/v1/stock/candle?symbol=${symbol}&resolution=D&from=${start}&to=${end}&token=${API_KEY}`);
+      const candleData = await candleRes.json();
 
-      if (historyData.historical) {
-        const formattedChart = historyData.historical.reverse().map(item => ({
-          name: item.date.slice(5),
-          prix: item.close
-        }));
+      if (candleData.s === 'ok' && candleData.c && candleData.t) {
+        const formattedChart = candleData.t.map((timestamp, index) => {
+            const date = new Date(timestamp * 1000);
+            return {
+                name: `${date.getDate()}/${date.getMonth() + 1}`, // Format JJ/MM
+                prix: candleData.c[index]
+            };
+        });
         setChartData(formattedChart);
       } else {
-        setChartData([]); // Pas de graphique si pas d'historique
+        setChartData([]);
       }
 
     } catch (err) {
       console.error(err);
-      // Afficher un message d'erreur compréhensible à l'utilisateur
-      setErrorMsg(err.message || "Erreur inconnue");
-      setStockInfo({ symbol: symbol, name: 'Erreur', price: 0, change: 0, changePercent: 0, mktCap: '-', sector: '-', description: '' });
+      setErrorMsg("Erreur ou symbole introuvable.");
+      setStockInfo({ symbol: symbol, name: '---', price: 0, change: 0, changePercent: 0, mktCap: '---', sector: '---' });
       setChartData([]);
     } finally {
       setLoading(false);
@@ -202,7 +195,8 @@ export default function StockDashboard() {
             <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
               <div>
                 <h1 className="text-3xl font-bold text-white flex items-center gap-2">
-                  {stockInfo.name} 
+                   {stockInfo.logo && <img src={stockInfo.logo} alt="logo" className="w-8 h-8 rounded-full bg-white p-0.5" />}
+                   {stockInfo.name} 
                   <span className="text-slate-500 text-lg font-normal">({stockInfo.symbol})</span>
                   <button onClick={addToWatchlist} className="text-slate-600 hover:text-yellow-400 transition-colors ml-2">
                     <Plus size={20} />
@@ -289,11 +283,6 @@ export default function StockDashboard() {
                       <span className="text-slate-400 text-sm">Capitalisation</span>
                       <span className="font-medium text-right text-sm">{stockInfo.mktCap}</span>
                     </div>
-                  </div>
-                  <div className="mt-4">
-                    <p className="text-xs text-slate-500 line-clamp-4 leading-relaxed">
-                      {stockInfo.description}
-                    </p>
                   </div>
                 </div>
 
