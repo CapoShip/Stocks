@@ -35,9 +35,19 @@ const NEWS_FEED = [
   { id: 3, title: "Analyse : Le secteur EV en pleine mutation", source: "Financial Times", time: "6h" },
 ];
 
+// Fonction utilitaire pour formater les gros chiffres (Millions/Milliards)
+const formatNumber = (num) => {
+  if (!num || num === 'None' || num === '-') return '---';
+  const n = parseFloat(num);
+  if (n >= 1.0e+12) return (n / 1.0e+12).toFixed(2) + "T";
+  if (n >= 1.0e+9) return (n / 1.0e+9).toFixed(2) + "B";
+  if (n >= 1.0e+6) return (n / 1.0e+6).toFixed(2) + "M";
+  return n.toFixed(2);
+};
+
 export default function StockDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [selectedStock, setSelectedStock] = useState('IBM'); // IBM fonctionne avec la clé 'demo'
+  const [selectedStock, setSelectedStock] = useState('IBM'); 
   const [searchQuery, setSearchQuery] = useState('');
   const [chartData, setChartData] = useState([]);
   const [watchlist, setWatchlist] = useState(['IBM', 'AAPL', 'TSLA', 'MSFT']);
@@ -46,10 +56,10 @@ export default function StockDashboard() {
     name: 'Chargement...',
     price: 0,
     change: 0,
-    sector: 'Technologie',
-    pe: 0,
+    sector: '---',
+    pe: '---',
     mktCap: '---',
-    beta: 0
+    beta: '---'
   });
 
   // Fonction pour récupérer les VRAIES données
@@ -64,19 +74,23 @@ export default function StockDashboard() {
       const historyRes = await fetch(`https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${symbol}&apikey=${API_KEY}`);
       const historyData = await historyRes.json();
 
-      // Vérifier si l'API a renvoyé une erreur (limite atteinte ou symbole invalide)
+      // 3. Récupérer les infos de l'entreprise (Overview - Secteur, PE, etc.)
+      const overviewRes = await fetch(`https://www.alphavantage.co/query?function=OVERVIEW&symbol=${symbol}&apikey=${API_KEY}`);
+      const overviewData = await overviewRes.json();
+
+      // Vérifier si l'API a renvoyé une erreur ou atteint la limite
       if (quoteData['Global Quote'] && historyData['Time Series (Daily)']) {
         const quote = quoteData['Global Quote'];
         
         // Mise à jour des infos du titre
         setStockInfo({
-          name: symbol, // L'API gratuite ne donne pas le nom complet (ex: Apple), on garde le symbole
+          name: overviewData.Name || symbol, 
           price: parseFloat(quote['05. price']).toFixed(2),
           change: parseFloat(quote['10. change percent'].replace('%', '')).toFixed(2),
-          sector: 'Technologie', // Donnée non dispo dans l'API gratuite basic
-          pe: '---', 
-          mktCap: '---',
-          beta: '---'
+          sector: overviewData.Sector || 'N/A', 
+          pe: overviewData.PERatio || 'N/A', 
+          mktCap: formatNumber(overviewData.MarketCapitalization),
+          beta: overviewData.Beta || 'N/A'
         });
 
         // Transformation des données pour le graphique
@@ -92,7 +106,7 @@ export default function StockDashboard() {
         setChartData(formattedChartData);
       } else {
         console.warn("Limite API atteinte ou erreur. Utilisation des données de secours.");
-        // Fallback si l'API échoue (limite gratuite dépassée)
+        // Fallback
         setStockInfo({ name: symbol, price: 150.00, change: 1.5, sector: 'Mode Démo', pe: 0, mktCap: '---', beta: 0 });
         setChartData(generateChartData(30));
       }
