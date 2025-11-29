@@ -12,22 +12,29 @@ export async function GET(request) {
   }
 
   try {
-    // --- CORRECTION CRITIQUE POUR TURBOPACK ---
-    // On vérifie si yahooFinance est prêt à l'emploi ou s'il faut le "créer" avec new()
     let yf = yahooFinance;
-    
-    // Si la fonction 'quote' n'existe pas directement, c'est qu'on a reçu la Classe
-    if (!yf.quote) {
-        console.log("⚠️ Instanciation manuelle de YahooFinance...");
+
+    // --- CORRECTION ULTIME ---
+    // 1. Si l'import est encapsulé dans un objet "default" (cas fréquent avec Turbopack)
+    // @ts-ignore
+    if (yf.default) {
         // @ts-ignore
-        yf = new yahooFinance();
+        yf = yf.default;
     }
 
-    // On supprime les alertes seulement si la fonction existe (pour éviter le crash)
+    // 2. Si yf est une Classe (fonction) au lieu d'un objet, on l'instancie
+    // C'est ça qui corrige l'erreur "Call new YahooFinance() first"
+    if (typeof yf === 'function') {
+        console.log("⚠️ Création d'une nouvelle instance YahooFinance...");
+        // @ts-ignore
+        yf = new yf();
+    }
+    // -------------------------
+
+    // Suppression des logs inutiles si la fonction existe
     if (yf.suppressNotices) {
         yf.suppressNotices(['yahooSurvey']);
     }
-    // -------------------------------------------
 
     // 1. Récupération des données
     const quote = await yf.quote(symbol);
