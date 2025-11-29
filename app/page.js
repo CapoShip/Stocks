@@ -53,48 +53,59 @@ export default function StockDashboard() {
     
     try {
       // 1. Récupérer le Profil et le Prix (Quote + Profile)
-      // L'endpoint 'quote' donne le prix en temps réel
       const quoteRes = await fetch(`https://financialmodelingprep.com/api/v3/quote/${symbol}?apikey=${API_KEY}`);
       const quoteData = await quoteRes.json();
+
+      // --- VÉRIFICATION DES ERREURS API (Le Fix est ici) ---
+      if (quoteData['Error Message']) {
+        throw new Error("Erreur API : " + quoteData['Error Message']);
+      }
+      if (!Array.isArray(quoteData)) {
+        throw new Error("Format de réponse invalide. Vérifiez votre clé API.");
+      }
+      if (quoteData.length === 0) {
+        throw new Error("Symbole introuvable.");
+      }
 
       // L'endpoint 'profile' donne le secteur, mkt cap, etc.
       const profileRes = await fetch(`https://financialmodelingprep.com/api/v3/profile/${symbol}?apikey=${API_KEY}`);
       const profileData = await profileRes.json();
 
-      if (!quoteData || quoteData.length === 0) {
-        throw new Error("Symbole introuvable.");
-      }
-
       const quote = quoteData[0];
-      const profile = profileData && profileData.length > 0 ? profileData[0] : {};
+      // Sécurité supplémentaire pour le profil
+      const profile = (Array.isArray(profileData) && profileData.length > 0) ? profileData[0] : {};
 
       setStockInfo({
         symbol: quote.symbol,
-        name: quote.name,
+        name: quote.name || symbol,
         price: quote.price,
         change: quote.change,
         changePercent: quote.changesPercentage,
-        mktCap: formatNumber(quote.marketCap), // FMP donne la market cap dans 'quote' aussi !
+        mktCap: formatNumber(quote.marketCap),
         sector: profile.sector || 'N/A',
         description: profile.description || 'Pas de description disponible.'
       });
 
-      // 2. Récupérer l'historique pour le graphique (30 derniers jours)
+      // 2. Récupérer l'historique pour le graphique
       const historyRes = await fetch(`https://financialmodelingprep.com/api/v3/historical-price-full/${symbol}?timeseries=30&apikey=${API_KEY}`);
       const historyData = await historyRes.json();
 
       if (historyData.historical) {
-        // Formater pour Recharts
         const formattedChart = historyData.historical.reverse().map(item => ({
-          name: item.date.slice(5), // Garder MM-JJ
+          name: item.date.slice(5),
           prix: item.close
         }));
         setChartData(formattedChart);
+      } else {
+        setChartData([]); // Pas de graphique si pas d'historique
       }
 
     } catch (err) {
       console.error(err);
-      setErrorMsg(err.message || "Erreur de chargement (Clé API invalide ou limite atteinte)");
+      // Afficher un message d'erreur compréhensible à l'utilisateur
+      setErrorMsg(err.message || "Erreur inconnue");
+      setStockInfo({ symbol: symbol, name: 'Erreur', price: 0, change: 0, changePercent: 0, mktCap: '-', sector: '-', description: '' });
+      setChartData([]);
     } finally {
       setLoading(false);
     }
@@ -199,7 +210,7 @@ export default function StockDashboard() {
                 </h1>
                 
                 {errorMsg ? (
-                   <div className="mt-2 text-red-400 bg-red-400/10 px-3 py-2 rounded-lg text-sm border border-red-400/20 max-w-md">
+                   <div className="mt-2 text-red-400 bg-red-400/10 px-3 py-2 rounded-lg text-sm border border-red-400/20 max-w-md animate-pulse">
                      ⚠️ {errorMsg}
                    </div>
                 ) : (
