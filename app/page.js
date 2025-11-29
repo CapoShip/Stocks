@@ -9,14 +9,21 @@ import {
   Activity, DollarSign, Clock, BarChart2, List, Plus, Trash2, RefreshCw, Briefcase, Globe
 } from 'lucide-react';
 
-// --- CONFIGURATION API (Finnhub) ---
-const API_KEY = 'd4kji6hr01qvpdokl27gd4kji6hr01qvpdokl280'; 
-
 const NEWS_FEED = [
   { id: 1, title: "Marchés : Le S&P 500 atteint un nouveau sommet", source: "Bloomberg", time: "1h" },
   { id: 2, title: "Tech : Les résultats trimestriels dépassent les attentes", source: "Reuters", time: "3h" },
   { id: 3, title: "Économie : L'inflation ralentit plus vite que prévu", source: "Financial Times", time: "5h" },
 ];
+
+// Fonction pour formater les gros chiffres
+const formatNumber = (num) => {
+  if (!num) return '---';
+  const n = parseFloat(num);
+  if (n >= 1.0e+12) return (n / 1.0e+12).toFixed(2) + "T";
+  if (n >= 1.0e+9) return (n / 1.0e+9).toFixed(2) + "B";
+  if (n >= 1.0e+6) return (n / 1.0e+6).toFixed(2) + "M";
+  return n.toFixed(2);
+};
 
 export default function StockDashboard() {
   const [selectedStock, setSelectedStock] = useState('AAPL'); 
@@ -34,7 +41,7 @@ export default function StockDashboard() {
     changePercent: 0,
     mktCap: '---',
     sector: '---',
-    logo: null
+    description: ''
   });
 
   const fetchStockData = async (symbol) => {
@@ -42,62 +49,31 @@ export default function StockDashboard() {
     setErrorMsg(null);
     
     try {
-      // 1. Récupérer le Prix (Quote)
-      const quoteRes = await fetch(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${API_KEY}`);
-      const quoteData = await quoteRes.json();
-
-      if (!quoteData || quoteData.c === 0) {
-        throw new Error("Symbole introuvable ou marché fermé.");
+      // ON APPELLE NOTRE PROPRE API LOCALE (/api/stock)
+      const response = await fetch(`/api/stock?symbol=${symbol}`);
+      
+      if (!response.ok) {
+        throw new Error("Symbole introuvable ou erreur serveur");
       }
 
-      // 2. Récupérer le Profil (Profile2)
-      const profileRes = await fetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${symbol}&token=${API_KEY}`);
-      const profileData = await profileRes.json();
-
-      // Formater la Capitalisation (Finnhub donne en Millions)
-      let mktCapFormatted = '---';
-      if (profileData.marketCapitalization) {
-          const mktCap = profileData.marketCapitalization; // En millions
-          if (mktCap >= 1000000) mktCapFormatted = (mktCap / 1000000).toFixed(2) + "T";
-          else if (mktCap >= 1000) mktCapFormatted = (mktCap / 1000).toFixed(2) + "B";
-          else mktCapFormatted = mktCap.toFixed(2) + "M";
-      }
+      const data = await response.json();
 
       setStockInfo({
-        symbol: symbol,
-        name: profileData.name || symbol,
-        price: quoteData.c, // Current price
-        change: quoteData.d, // Change
-        changePercent: quoteData.dp, // Percent change
-        mktCap: mktCapFormatted,
-        sector: profileData.finnhubIndustry || 'N/A',
-        logo: profileData.logo
+        symbol: data.symbol,
+        name: data.name,
+        price: data.price,
+        change: data.change,
+        changePercent: data.changePercent,
+        mktCap: formatNumber(data.mktCap),
+        sector: data.sector,
+        description: data.description
       });
 
-      // 3. Récupérer l'historique (Candles)
-      // On demande les 30 derniers jours
-      const end = Math.floor(Date.now() / 1000);
-      const start = end - (30 * 24 * 60 * 60);
-      const candleRes = await fetch(`https://finnhub.io/api/v1/stock/candle?symbol=${symbol}&resolution=D&from=${start}&to=${end}&token=${API_KEY}`);
-      const candleData = await candleRes.json();
-
-      if (candleData.s === 'ok' && candleData.c && candleData.t) {
-        const formattedChart = candleData.t.map((timestamp, index) => {
-            const date = new Date(timestamp * 1000);
-            return {
-                name: `${date.getDate()}/${date.getMonth() + 1}`, // Format JJ/MM
-                prix: candleData.c[index]
-            };
-        });
-        setChartData(formattedChart);
-      } else {
-        setChartData([]);
-      }
+      setChartData(data.chart || []);
 
     } catch (err) {
       console.error(err);
-      setErrorMsg("Erreur ou symbole introuvable.");
-      setStockInfo({ symbol: symbol, name: '---', price: 0, change: 0, changePercent: 0, mktCap: '---', sector: '---' });
+      setErrorMsg("Données indisponibles.");
       setChartData([]);
     } finally {
       setLoading(false);
@@ -195,7 +171,6 @@ export default function StockDashboard() {
             <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
               <div>
                 <h1 className="text-3xl font-bold text-white flex items-center gap-2">
-                   {stockInfo.logo && <img src={stockInfo.logo} alt="logo" className="w-8 h-8 rounded-full bg-white p-0.5" />}
                    {stockInfo.name} 
                   <span className="text-slate-500 text-lg font-normal">({stockInfo.symbol})</span>
                   <button onClick={addToWatchlist} className="text-slate-600 hover:text-yellow-400 transition-colors ml-2">
@@ -210,11 +185,11 @@ export default function StockDashboard() {
                 ) : (
                   <div className="flex items-baseline gap-3 mt-1">
                     <span className="text-4xl font-bold text-white">
-                      ${stockInfo.price}
+                      ${stockInfo.price ? stockInfo.price.toFixed(2) : '0.00'}
                     </span>
                     <span className={`text-lg font-medium flex items-center ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
                       {isPositive ? <TrendingUp size={20} className="mr-1" /> : <TrendingDown size={20} className="mr-1" />}
-                      {stockInfo.change > 0 ? '+' : ''}{stockInfo.change} ({stockInfo.changePercent ? stockInfo.changePercent.toFixed(2) : '0'}%)
+                      {stockInfo.change > 0 ? '+' : ''}{stockInfo.change ? stockInfo.change.toFixed(2) : '0.00'} ({stockInfo.changePercent ? (stockInfo.changePercent * 100).toFixed(2) : '0.00'}%)
                     </span>
                   </div>
                 )}
@@ -226,7 +201,7 @@ export default function StockDashboard() {
               
               {/* Chart Section */}
               <div className="lg:col-span-2 bg-slate-950 rounded-2xl p-6 border border-slate-800 shadow-xl min-h-[350px]">
-                <h3 className="text-slate-400 text-sm mb-4">Évolution sur 30 jours</h3>
+                <h3 className="text-slate-400 text-sm mb-4">Évolution sur 30 jours (Source: Yahoo)</h3>
                 <div className="h-80 w-full">
                   {loading ? (
                     <div className="h-full w-full flex items-center justify-center text-slate-500 animate-pulse">
@@ -283,6 +258,11 @@ export default function StockDashboard() {
                       <span className="text-slate-400 text-sm">Capitalisation</span>
                       <span className="font-medium text-right text-sm">{stockInfo.mktCap}</span>
                     </div>
+                  </div>
+                  <div className="mt-4">
+                    <p className="text-xs text-slate-500 line-clamp-4 leading-relaxed">
+                      {stockInfo.description}
+                    </p>
                   </div>
                 </div>
 
