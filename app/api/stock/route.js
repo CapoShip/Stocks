@@ -5,24 +5,37 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const symbol = searchParams.get('symbol');
 
-  console.log("Moteur API appelé pour :", symbol);
+  console.log("🔍 Moteur API appelé pour :", symbol);
 
   if (!symbol) {
     return NextResponse.json({ error: 'Symbole manquant' }, { status: 400 });
   }
 
   try {
-    // CORRECTION : On s'assure que yahooFinance est bien prêt à l'emploi
-    // On désactive aussi les avertissements "logger" qui peuvent polluer la console
-    yahooFinance.suppressNotices(['yahooSurvey']);
+    // --- CORRECTION CRITIQUE POUR TURBOPACK ---
+    // On vérifie si yahooFinance est prêt à l'emploi ou s'il faut le "créer" avec new()
+    let yf = yahooFinance;
     
+    // Si la fonction 'quote' n'existe pas directement, c'est qu'on a reçu la Classe
+    if (!yf.quote) {
+        console.log("⚠️ Instanciation manuelle de YahooFinance...");
+        // @ts-ignore
+        yf = new yahooFinance();
+    }
+
+    // On supprime les alertes seulement si la fonction existe (pour éviter le crash)
+    if (yf.suppressNotices) {
+        yf.suppressNotices(['yahooSurvey']);
+    }
+    // -------------------------------------------
+
     // 1. Récupération des données
-    const quote = await yahooFinance.quote(symbol);
-    const quoteSummary = await yahooFinance.quoteSummary(symbol, { modules: ['summaryProfile'] });
+    const quote = await yf.quote(symbol);
+    const quoteSummary = await yf.quoteSummary(symbol, { modules: ['summaryProfile'] });
     
     // 2. Historique (30 jours)
     const queryOptions = { period1: '1mo', interval: '1d' };
-    const historical = await yahooFinance.historical(symbol, queryOptions);
+    const historical = await yf.historical(symbol, queryOptions);
 
     const result = {
       symbol: quote.symbol,
@@ -42,11 +55,7 @@ export async function GET(request) {
     return NextResponse.json(result);
 
   } catch (error) {
-    console.error("Erreur Backend:", error.message);
-    
-    // Si l'erreur persiste, on essaie une méthode de secours (hard-instanciation)
-    // C'est ce que le message d'erreur suggérait, mais c'est rare d'en avoir besoin si l'import est bon.
-    
+    console.error("❌ Erreur Backend:", error.message);
     return NextResponse.json(
       { error: "Impossible de récupérer les données : " + error.message },
       { status: 500 }
