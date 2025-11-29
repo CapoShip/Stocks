@@ -14,35 +14,28 @@ export async function GET(request) {
   try {
     let yf = yahooFinance;
 
-    // --- CORRECTION ULTIME ---
-    // 1. Si l'import est encapsulé dans un objet "default" (cas fréquent avec Turbopack)
+    // --- CORRECTION 1 : INSTANCIATION (Pour Turbopack) ---
     // @ts-ignore
-    if (yf.default) {
-        // @ts-ignore
-        yf = yf.default;
-    }
-
-    // 2. Si yf est une Classe (fonction) au lieu d'un objet, on l'instancie
-    // C'est ça qui corrige l'erreur "Call new YahooFinance() first"
+    if (yf.default) yf = yf.default;
     if (typeof yf === 'function') {
-        console.log("⚠️ Création d'une nouvelle instance YahooFinance...");
+        console.log("⚠️ Instanciation YahooFinance...");
         // @ts-ignore
         yf = new yf();
     }
-    // -------------------------
+    if (yf.suppressNotices) yf.suppressNotices(['yahooSurvey']);
+    // -----------------------------------------------------
 
-    // Suppression des logs inutiles si la fonction existe
-    if (yf.suppressNotices) {
-        yf.suppressNotices(['yahooSurvey']);
-    }
-
-    // 1. Récupération des données
+    // 1. Récupération des données (Prix + Profil)
     const quote = await yf.quote(symbol);
     const quoteSummary = await yf.quoteSummary(symbol, { modules: ['summaryProfile'] });
     
-    // 2. Historique (30 jours)
-    const queryOptions = { period1: '1mo', interval: '1d' };
-    const historical = await yf.historical(symbol, queryOptions);
+    // --- CORRECTION 2 : UTILISATION DE 'CHART' (Au lieu de historical) ---
+    // La méthode chart est plus robuste pour les intervalles comme "1mo"
+    const chartResult = await yf.chart(symbol, { range: '1mo', interval: '1d' });
+    
+    // Les données historiques sont dans .quotes avec la méthode chart
+    const historical = chartResult.quotes || [];
+    // ---------------------------------------------------------------------
 
     const result = {
       symbol: quote.symbol,
