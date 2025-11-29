@@ -2,11 +2,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { 
-  LineChart, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
 } from 'recharts';
 import { 
   TrendingUp, TrendingDown, Search, Bell, User, 
-  Activity, Plus, Trash2, RefreshCw, Briefcase, Globe
+  Activity, Plus, Trash2, RefreshCw, Briefcase, Globe, BarChart2
 } from 'lucide-react';
 
 const NEWS_FEED = [
@@ -43,7 +43,7 @@ const formatSignedNumber = (num) => {
 };
 
 export default function StockDashboard() {
-  const [selectedStock, setSelectedStock] = useState('NVDA'); // Nvidia par défaut pour voir ton exemple
+  const [selectedStock, setSelectedStock] = useState('NVDA'); 
   const [activeRange, setActiveRange] = useState('1M');
   const [searchQuery, setSearchQuery] = useState('');
   const [chartData, setChartData] = useState([]);
@@ -79,7 +79,7 @@ export default function StockDashboard() {
         name: data.name,
         price: data.price,
         change: data.change,
-        changePercent: data.changePercent, // On garde la valeur brute (ex: -1.81)
+        changePercent: data.changePercent, 
         mktCap: formatNumber(data.mktCap),
         sector: data.sector,
         description: data.description
