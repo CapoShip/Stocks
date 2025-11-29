@@ -2,11 +2,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { 
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area 
+  LineChart, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
 } from 'recharts';
 import { 
-  TrendingUp, TrendingDown, Search, Bell, Menu, User, 
-  Activity, DollarSign, Clock, BarChart2, List, Plus, Trash2, RefreshCw, Briefcase, Globe
+  TrendingUp, TrendingDown, Search, Bell, User, 
+  Activity, Plus, Trash2, RefreshCw, Briefcase, Globe
 } from 'lucide-react';
 
 const NEWS_FEED = [
@@ -24,6 +24,7 @@ const TIME_RANGES = {
   '5A': { label: '5A', range: '5y', interval: '1mo' },
 };
 
+// Fonction pour formater les gros chiffres (Milliards/Trillions)
 const formatNumber = (num) => {
   if (!num) return '---';
   const n = parseFloat(num);
@@ -33,8 +34,16 @@ const formatNumber = (num) => {
   return n.toFixed(2);
 };
 
+// Fonction pour forcer le signe + ou -
+const formatSignedNumber = (num) => {
+    if (num === undefined || num === null) return '0.00';
+    const n = parseFloat(num);
+    // Si c'est positif, on ajoute le "+", sinon le "-" est déjà là
+    return (n > 0 ? '+' : '') + n.toFixed(2);
+};
+
 export default function StockDashboard() {
-  const [selectedStock, setSelectedStock] = useState('AAPL'); 
+  const [selectedStock, setSelectedStock] = useState('NVDA'); // Nvidia par défaut pour voir ton exemple
   const [activeRange, setActiveRange] = useState('1M');
   const [searchQuery, setSearchQuery] = useState('');
   const [chartData, setChartData] = useState([]);
@@ -45,9 +54,9 @@ export default function StockDashboard() {
   const [stockInfo, setStockInfo] = useState({
     symbol: '---',
     name: '---',
-    price: '0.00',
-    change: '0.00',
-    changePercent: '0.00',
+    price: 0,
+    change: 0,
+    changePercent: 0,
     mktCap: '---',
     sector: '---',
     description: ''
@@ -63,17 +72,14 @@ export default function StockDashboard() {
       const response = await fetch(`/api/stock?symbol=${symbol}&range=${range}&interval=${interval}`);
       const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data.error || "Erreur inconnue");
-      }
+      if (!response.ok) throw new Error("Erreur lors de la récupération des données");
 
       setStockInfo({
         symbol: data.symbol,
         name: data.name,
-        price: data.price ? data.price.toFixed(2) : '0.00',
-        change: data.change ? data.change.toFixed(2) : '0.00',
-        // CORRECTION POURCENTAGE : On ne multiplie plus par 100 si Yahoo donne déjà le %
-        changePercent: data.changePercent ? data.changePercent.toFixed(2) : '0.00',
+        price: data.price,
+        change: data.change,
+        changePercent: data.changePercent, // On garde la valeur brute (ex: -1.81)
         mktCap: formatNumber(data.mktCap),
         sector: data.sector,
         description: data.description
@@ -92,7 +98,7 @@ export default function StockDashboard() {
 
         return {
           name: dateLabel,
-          prix: parseFloat(item.prix.toFixed(2))
+          prix: item.prix
         };
       });
 
@@ -111,7 +117,7 @@ export default function StockDashboard() {
     fetchStockData(selectedStock, activeRange);
   }, [selectedStock, activeRange]);
 
-  const isPositive = parseFloat(stockInfo.change) >= 0;
+  const isPositive = stockInfo.change >= 0;
 
   const handleSearch = (e) => {
     e.preventDefault();
@@ -206,23 +212,24 @@ export default function StockDashboard() {
                 </h1>
                 
                 {errorMsg ? (
-                   <div className="mt-2 text-red-400 bg-red-400/10 px-3 py-2 rounded-lg text-sm border border-red-400/20 max-w-md animate-pulse">
+                   <div className="mt-2 text-red-400 bg-red-400/10 px-3 py-2 rounded-lg text-sm border border-red-400/20 max-w-md">
                      ⚠️ {errorMsg}
                    </div>
                 ) : (
                   <div className="flex items-baseline gap-3 mt-1">
                     <span className="text-4xl font-bold text-white">
-                      ${stockInfo.price}
+                      ${stockInfo.price ? stockInfo.price.toFixed(2) : '0.00'}
                     </span>
                     <span className={`text-lg font-medium flex items-center ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
                       {isPositive ? <TrendingUp size={20} className="mr-1" /> : <TrendingDown size={20} className="mr-1" />}
-                      {stockInfo.change > 0 ? '+' : ''}{stockInfo.change} ({stockInfo.changePercent}%)
+                      {/* Affichage corrigé du changement et pourcentage */}
+                      {formatSignedNumber(stockInfo.change)} ({formatSignedNumber(stockInfo.changePercent)}%)
                     </span>
                   </div>
                 )}
               </div>
               
-              {/* BOUTONS D'INTERVALLE DE TEMPS */}
+              {/* Boutons d'intervalle */}
               <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800">
                 {Object.keys(TIME_RANGES).map((rangeKey) => (
                   <button
@@ -294,9 +301,8 @@ export default function StockDashboard() {
                 </div>
               </div>
 
-              {/* Company Info & News */}
+              {/* Company Info */}
               <div className="flex flex-col gap-6">
-                {/* Stats Card */}
                 <div className="bg-slate-950 rounded-2xl p-6 border border-slate-800 shadow-xl">
                   <h2 className="text-lg font-semibold mb-4 text-slate-200 flex items-center gap-2">
                     <Briefcase size={18} className="text-blue-400"/> Info Entreprise
@@ -318,7 +324,7 @@ export default function StockDashboard() {
                   </div>
                 </div>
 
-                {/* News Placeholder */}
+                {/* News */}
                  <div className="bg-slate-950 rounded-2xl p-6 border border-slate-800 shadow-xl flex-1">
                    <h2 className="text-lg font-semibold mb-4 text-slate-200 flex items-center gap-2">
                      <Globe size={18} className="text-blue-400"/> Actualités
