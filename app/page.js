@@ -15,6 +15,15 @@ const NEWS_FEED = [
   { id: 3, title: "Économie : L'inflation ralentit plus vite que prévu", source: "Financial Times", time: "5h" },
 ];
 
+const TIME_RANGES = {
+  '1J': { label: '1J', range: '1d', interval: '5m' },
+  '5J': { label: '5J', range: '5d', interval: '15m' },
+  '1M': { label: '1M', range: '1mo', interval: '1d' },
+  '6M': { label: '6M', range: '6mo', interval: '1d' },
+  '1A': { label: '1A', range: '1y', interval: '1wk' },
+  '5A': { label: '5A', range: '5y', interval: '1mo' },
+};
+
 const formatNumber = (num) => {
   if (!num) return '---';
   const n = parseFloat(num);
@@ -26,6 +35,7 @@ const formatNumber = (num) => {
 
 export default function StockDashboard() {
   const [selectedStock, setSelectedStock] = useState('AAPL'); 
+  const [activeRange, setActiveRange] = useState('1M');
   const [searchQuery, setSearchQuery] = useState('');
   const [chartData, setChartData] = useState([]);
   const [watchlist, setWatchlist] = useState(['AAPL', 'NVDA', 'TSLA', 'MSFT', 'AMZN']);
@@ -35,35 +45,58 @@ export default function StockDashboard() {
   const [stockInfo, setStockInfo] = useState({
     symbol: '---',
     name: '---',
-    price: 0,
-    change: 0,
-    changePercent: 0,
+    price: '0.00',
+    change: '0.00',
+    changePercent: '0.00',
     mktCap: '---',
     sector: '---',
     description: ''
   });
 
-  const fetchStockData = async (symbol) => {
+  const fetchStockData = async (symbol, rangeKey) => {
     setLoading(true);
     setErrorMsg(null);
     
+    const { range, interval } = TIME_RANGES[rangeKey];
+
     try {
-      const response = await fetch(`/api/stock?symbol=${symbol}`);
-      if (!response.ok) throw new Error("Erreur API");
+      const response = await fetch(`/api/stock?symbol=${symbol}&range=${range}&interval=${interval}`);
       const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Erreur inconnue");
+      }
 
       setStockInfo({
         symbol: data.symbol,
         name: data.name,
-        price: data.price,
-        change: data.change,
-        changePercent: data.changePercent,
+        price: data.price ? data.price.toFixed(2) : '0.00',
+        change: data.change ? data.change.toFixed(2) : '0.00',
+        // CORRECTION POURCENTAGE : On ne multiplie plus par 100 si Yahoo donne déjà le %
+        changePercent: data.changePercent ? data.changePercent.toFixed(2) : '0.00',
         mktCap: formatNumber(data.mktCap),
         sector: data.sector,
         description: data.description
       });
 
-      setChartData(data.chart || []);
+      const formattedChart = (data.chart || []).map(item => {
+        const dateObj = new Date(item.date);
+        let dateLabel = "";
+        
+        if (rangeKey === '1J' || rangeKey === '5J') {
+            dateLabel = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            if (rangeKey === '5J') dateLabel = dateObj.toLocaleDateString([], { weekday: 'short' }) + ' ' + dateLabel;
+        } else {
+            dateLabel = dateObj.toLocaleDateString([], { day: '2-digit', month: '2-digit' });
+        }
+
+        return {
+          name: dateLabel,
+          prix: parseFloat(item.prix.toFixed(2))
+        };
+      });
+
+      setChartData(formattedChart);
 
     } catch (err) {
       console.error(err);
@@ -75,10 +108,10 @@ export default function StockDashboard() {
   };
 
   useEffect(() => {
-    fetchStockData(selectedStock);
-  }, [selectedStock]);
+    fetchStockData(selectedStock, activeRange);
+  }, [selectedStock, activeRange]);
 
-  const isPositive = stockInfo.change >= 0;
+  const isPositive = parseFloat(stockInfo.change) >= 0;
 
   const handleSearch = (e) => {
     e.preventDefault();
@@ -148,7 +181,7 @@ export default function StockDashboard() {
             />
           </form>
           <div className="flex items-center gap-4">
-             <button onClick={() => fetchStockData(selectedStock)} className="p-2 hover:bg-slate-800 rounded-full transition-colors" title="Rafraîchir">
+             <button onClick={() => fetchStockData(selectedStock, activeRange)} className="p-2 hover:bg-slate-800 rounded-full transition-colors" title="Rafraîchir">
                 <RefreshCw size={18} className={loading ? "animate-spin text-blue-400" : "text-slate-400"} />
              </button>
              <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
@@ -179,14 +212,31 @@ export default function StockDashboard() {
                 ) : (
                   <div className="flex items-baseline gap-3 mt-1">
                     <span className="text-4xl font-bold text-white">
-                      ${stockInfo.price ? stockInfo.price.toFixed(2) : '0.00'}
+                      ${stockInfo.price}
                     </span>
                     <span className={`text-lg font-medium flex items-center ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
                       {isPositive ? <TrendingUp size={20} className="mr-1" /> : <TrendingDown size={20} className="mr-1" />}
-                      {stockInfo.change > 0 ? '+' : ''}{stockInfo.change ? stockInfo.change.toFixed(2) : '0.00'} ({stockInfo.changePercent ? (stockInfo.changePercent * 100).toFixed(2) : '0.00'}%)
+                      {stockInfo.change > 0 ? '+' : ''}{stockInfo.change} ({stockInfo.changePercent}%)
                     </span>
                   </div>
                 )}
+              </div>
+              
+              {/* BOUTONS D'INTERVALLE DE TEMPS */}
+              <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800">
+                {Object.keys(TIME_RANGES).map((rangeKey) => (
+                  <button
+                    key={rangeKey}
+                    onClick={() => setActiveRange(rangeKey)}
+                    className={`px-3 py-1 text-xs font-bold rounded-md transition-colors ${
+                      activeRange === rangeKey 
+                      ? 'bg-blue-600 text-white' 
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                    }`}
+                  >
+                    {TIME_RANGES[rangeKey].label}
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -195,7 +245,7 @@ export default function StockDashboard() {
               
               {/* Chart Section */}
               <div className="lg:col-span-2 bg-slate-950 rounded-2xl p-6 border border-slate-800 shadow-xl min-h-[350px]">
-                <h3 className="text-slate-400 text-sm mb-4">Évolution sur 30 jours (Source: Yahoo)</h3>
+                <h3 className="text-slate-400 text-sm mb-4">Évolution ({activeRange})</h3>
                 <div className="h-80 w-full">
                   {loading ? (
                     <div className="h-full w-full flex items-center justify-center text-slate-500 animate-pulse">
@@ -211,11 +261,19 @@ export default function StockDashboard() {
                           </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                        <XAxis dataKey="name" tick={{fill: '#64748b', fontSize: 12}} tickMargin={10} />
-                        <YAxis domain={['auto', 'auto']} orientation="right" tick={{fill: '#64748b', fontSize: 12}} tickLine={false} axisLine={false} />
+                        <XAxis dataKey="name" tick={{fill: '#64748b', fontSize: 12}} tickMargin={10} minTickGap={30} />
+                        <YAxis 
+                            domain={['auto', 'auto']} 
+                            orientation="right" 
+                            tick={{fill: '#64748b', fontSize: 12}} 
+                            tickLine={false} 
+                            axisLine={false}
+                            tickFormatter={(val) => val.toFixed(2)} 
+                        />
                         <Tooltip 
                           contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '8px' }}
                           itemStyle={{ color: '#fff' }}
+                          formatter={(value) => [value.toFixed(2), "Prix"]} 
                         />
                         <Area 
                           type="monotone" 

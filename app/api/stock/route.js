@@ -4,10 +4,10 @@ import yahooFinance from 'yahoo-finance2';
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const symbol = searchParams.get('symbol');
-  const range = searchParams.get('range') || '1mo'; // Par défaut 1 mois
-  const interval = searchParams.get('interval') || '1d'; // Par défaut 1 jour
+  const range = searchParams.get('range') || '1mo'; 
+  const interval = searchParams.get('interval') || '1d';
 
-  console.log(`🔍 [API] Demande : ${symbol} | Range: ${range} | Interval: ${interval}`);
+  console.log(`🔍 [API] Demande : ${symbol} | Range: ${range}`);
 
   if (!symbol) {
     return NextResponse.json({ error: 'Symbole manquant' }, { status: 400 });
@@ -23,46 +23,30 @@ export async function GET(request) {
     }
     if (yf.suppressNotices) yf.suppressNotices(['yahooSurvey']);
 
-    // 1. Infos générales
     const quote = await yf.quote(symbol);
     const quoteSummary = await yf.quoteSummary(symbol, { modules: ['summaryProfile'] });
     
-    // 2. Calcul de la date de début (period1) à partir du range
-    // Yahoo veut une date précise, pas juste "1mo"
+    // CORRECTION DATE : On utilise des Timestamps (secondes) pour être précis
     const today = new Date();
     const period1 = new Date(today);
 
     switch (range) {
-        case '1d':
-            period1.setDate(today.getDate() - 3); // On recule de 3 jours pour être sûr d'avoir des données (week-end)
-            break;
-        case '5d':
-            period1.setDate(today.getDate() - 7);
-            break;
-        case '1mo':
-            period1.setMonth(today.getMonth() - 1);
-            break;
-        case '6mo':
-            period1.setMonth(today.getMonth() - 6);
-            break;
-        case '1y':
-            period1.setFullYear(today.getFullYear() - 1);
-            break;
-        case '5y':
-            period1.setFullYear(today.getFullYear() - 5);
-            break;
-        default:
-            period1.setMonth(today.getMonth() - 1);
+        case '1d': period1.setDate(today.getDate() - 3); break; // Large pour inclure le dernier jour de bourse
+        case '5d': period1.setDate(today.getDate() - 7); break;
+        case '1mo': period1.setMonth(today.getMonth() - 1); break;
+        case '6mo': period1.setMonth(today.getMonth() - 6); break;
+        case '1y': period1.setFullYear(today.getFullYear() - 1); break;
+        case '5y': period1.setFullYear(today.getFullYear() - 5); break;
+        default: period1.setMonth(today.getMonth() - 1);
     }
 
     const queryOptions = { 
-        period1: period1.toISOString().split('T')[0], // Format YYYY-MM-DD
+        period1: Math.floor(period1.getTime() / 1000), // Timestamp début
+        period2: Math.floor(today.getTime() / 1000),   // Timestamp fin (maintenant)
         interval: interval 
-        // Note: On ne met PAS 'range' ici pour éviter l'erreur
     };
 
     const chartResult = await yf.chart(symbol, queryOptions);
-    
     const historical = (chartResult && chartResult.quotes) ? chartResult.quotes : [];
 
     const result = {
