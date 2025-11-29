@@ -9,8 +9,11 @@ import {
   Activity, DollarSign, Clock, BarChart2, List, Plus, Trash2, ArrowRight
 } from 'lucide-react';
 
-// --- Données Simulées pour la démo ---
+// --- CONFIGURATION API ---
+// ⚠️ REMPLACE 'demo' PAR TA PROPRE CLÉ GRATUITE (https://www.alphavantage.co/support/#api-key)
+const API_KEY = 'ZN0HQFCI78AYJKIP'; 
 
+// --- Données de Secours (Fallback) ---
 const generateChartData = (points = 30, volatility = 5) => {
   let data = [];
   let price = 150;
@@ -26,14 +29,6 @@ const generateChartData = (points = 30, volatility = 5) => {
   return data;
 };
 
-const MOCK_STOCKS = {
-  'AAPL': { name: 'Apple Inc.', price: 175.43, change: 1.25, sector: 'Technologie', pe: 28.5, mktCap: '2.7T', beta: 1.12 },
-  'TSLA': { name: 'Tesla Inc.', price: 240.50, change: -2.10, sector: 'Automobile', pe: 65.2, mktCap: '800B', beta: 2.05 },
-  'MSFT': { name: 'Microsoft', price: 330.12, change: 0.85, sector: 'Technologie', pe: 32.1, mktCap: '2.5T', beta: 0.95 },
-  'AMZN': { name: 'Amazon', price: 130.20, change: 0.50, sector: 'Conso. Discrétionnaire', pe: 105.4, mktCap: '1.3T', beta: 1.25 },
-  'GOOGL': { name: 'Alphabet Inc.', price: 135.60, change: -0.45, sector: 'Communication', pe: 25.4, mktCap: '1.7T', beta: 1.05 },
-};
-
 const NEWS_FEED = [
   { id: 1, title: "La Fed annonce une pause sur les taux", source: "Bloomberg", time: "2h" },
   { id: 2, title: "Nouveaux résultats trimestriels explosifs pour la Tech", source: "Reuters", time: "4h" },
@@ -42,37 +37,88 @@ const NEWS_FEED = [
 
 export default function StockDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [selectedStock, setSelectedStock] = useState('AAPL');
+  const [selectedStock, setSelectedStock] = useState('IBM'); // IBM fonctionne avec la clé 'demo'
   const [searchQuery, setSearchQuery] = useState('');
   const [chartData, setChartData] = useState([]);
-  const [watchlist, setWatchlist] = useState(['AAPL', 'TSLA', 'MSFT']);
+  const [watchlist, setWatchlist] = useState(['IBM', 'AAPL', 'TSLA', 'MSFT']);
   const [loading, setLoading] = useState(false);
+  const [stockInfo, setStockInfo] = useState({
+    name: 'Chargement...',
+    price: 0,
+    change: 0,
+    sector: 'Technologie',
+    pe: 0,
+    mktCap: '---',
+    beta: 0
+  });
 
-  // Simulation chargement de données
-  useEffect(() => {
+  // Fonction pour récupérer les VRAIES données
+  const fetchStockData = async (symbol) => {
     setLoading(true);
-    // Simuler un appel API
-    setTimeout(() => {
-      setChartData(generateChartData(50, selectedStock === 'TSLA' ? 15 : 5));
-      setLoading(false);
-    }, 600);
+    try {
+      // 1. Récupérer le prix actuel (Global Quote)
+      const quoteRes = await fetch(`https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${API_KEY}`);
+      const quoteData = await quoteRes.json();
+      
+      // 2. Récupérer l'historique pour le graphique (Daily)
+      const historyRes = await fetch(`https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${symbol}&apikey=${API_KEY}`);
+      const historyData = await historyRes.json();
+
+      // Vérifier si l'API a renvoyé une erreur (limite atteinte ou symbole invalide)
+      if (quoteData['Global Quote'] && historyData['Time Series (Daily)']) {
+        const quote = quoteData['Global Quote'];
+        
+        // Mise à jour des infos du titre
+        setStockInfo({
+          name: symbol, // L'API gratuite ne donne pas le nom complet (ex: Apple), on garde le symbole
+          price: parseFloat(quote['05. price']).toFixed(2),
+          change: parseFloat(quote['10. change percent'].replace('%', '')).toFixed(2),
+          sector: 'Technologie', // Donnée non dispo dans l'API gratuite basic
+          pe: '---', 
+          mktCap: '---',
+          beta: '---'
+        });
+
+        // Transformation des données pour le graphique
+        const timeSeries = historyData['Time Series (Daily)'];
+        const formattedChartData = Object.keys(timeSeries)
+          .slice(0, 30) // Prendre les 30 derniers jours
+          .reverse() // Mettre dans l'ordre chronologique
+          .map(date => ({
+            name: date.slice(5), // Garder juste MM-JJ
+            prix: parseFloat(timeSeries[date]['4. close'])
+          }));
+        
+        setChartData(formattedChartData);
+      } else {
+        console.warn("Limite API atteinte ou erreur. Utilisation des données de secours.");
+        // Fallback si l'API échoue (limite gratuite dépassée)
+        setStockInfo({ name: symbol, price: 150.00, change: 1.5, sector: 'Mode Démo', pe: 0, mktCap: '---', beta: 0 });
+        setChartData(generateChartData(30));
+      }
+
+    } catch (error) {
+      console.error("Erreur de fetch:", error);
+      setChartData(generateChartData(30));
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchStockData(selectedStock);
   }, [selectedStock]);
 
-  const stockInfo = MOCK_STOCKS[selectedStock] || MOCK_STOCKS['AAPL'];
-  const isPositive = stockInfo.change >= 0;
+  const isPositive = parseFloat(stockInfo.change) >= 0;
 
   const handleSearch = (e) => {
     e.preventDefault();
     const query = searchQuery.toUpperCase();
-    if (MOCK_STOCKS[query]) {
+    if (query) {
       setSelectedStock(query);
       setSearchQuery('');
-      // Ajouter à la watchlist si pas présent
       if (!watchlist.includes(query)) {
         setWatchlist([...watchlist, query]);
       }
-    } else {
-      alert("Symbole non trouvé dans la démo (Essayez AAPL, TSLA, MSFT, AMZN, GOOGL)");
     }
   };
 
@@ -112,10 +158,7 @@ export default function StockDashboard() {
           <div className="mt-8 px-4 hidden md:block">
             <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Mes Favoris</h3>
             <div className="space-y-2">
-              {watchlist.map(symbol => {
-                const stock = MOCK_STOCKS[symbol];
-                const positive = stock.change >= 0;
-                return (
+              {watchlist.map(symbol => (
                   <div 
                     key={symbol} 
                     onClick={() => setSelectedStock(symbol)}
@@ -123,19 +166,15 @@ export default function StockDashboard() {
                   >
                     <div className="flex justify-between items-center mb-1">
                       <span className="font-bold text-sm">{symbol}</span>
-                      <span className={`text-xs ${positive ? 'text-green-400' : 'text-red-400'}`}>
-                        {positive ? '+' : ''}{stock.change}%
-                      </span>
                     </div>
                     <div className="flex justify-between items-center text-xs text-slate-400">
-                      <span>{stock.name}</span>
+                      <span>Action</span>
                       <button onClick={(e) => { e.stopPropagation(); removeFromWatchlist(symbol); }} className="hover:text-red-400">
                         <Trash2 size={12} />
                       </button>
                     </div>
                   </div>
-                );
-              })}
+                ))}
             </div>
           </div>
         </div>
@@ -157,7 +196,7 @@ export default function StockDashboard() {
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-500" size={18} />
             <input 
               type="text" 
-              placeholder="Rechercher (ex: TSLA)..." 
+              placeholder="Rechercher (ex: IBM, AAPL)..." 
               className="bg-slate-900 border border-slate-700 text-sm rounded-full pl-10 pr-4 py-2 w-64 focus:outline-none focus:border-blue-500 text-slate-200 placeholder-slate-500 transition-all"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
