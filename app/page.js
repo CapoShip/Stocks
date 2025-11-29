@@ -15,7 +15,6 @@ const NEWS_FEED = [
   { id: 3, title: "Économie : L'inflation ralentit plus vite que prévu", source: "Financial Times", time: "5h" },
 ];
 
-// Fonction pour formater les gros chiffres
 const formatNumber = (num) => {
   if (!num) return '---';
   const n = parseFloat(num);
@@ -49,13 +48,8 @@ export default function StockDashboard() {
     setErrorMsg(null);
     
     try {
-      // ON APPELLE NOTRE PROPRE API LOCALE (/api/stock)
       const response = await fetch(`/api/stock?symbol=${symbol}`);
-      
-      if (!response.ok) {
-        throw new Error("Symbole introuvable ou erreur serveur");
-      }
-
+      if (!response.ok) throw new Error("Erreur API");
       const data = await response.json();
 
       setStockInfo({
