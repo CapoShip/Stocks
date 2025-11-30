@@ -1,30 +1,23 @@
 import { google } from '@ai-sdk/google';
-import { generateText, convertToCoreMessages } from 'ai'; // CHANGEMENT ICI
+import { generateText, convertToCoreMessages } from 'ai'; // CHANGEMENT CRUCIAL ICI
 import { NextResponse } from 'next/server';
 
-export const maxDuration = 30; // On garde le temps long pour la réflexion
+export const maxDuration = 30; // On garde le temps long
 
 export async function POST(req) {
   try {
     const { messages, data } = await req.json();
 
-    // On prépare le contexte pour l'IA
     const systemInstruction = `Tu es un expert en bourse. CONTEXTE: ${data?.stockInfo ? `Action ${data.stockInfo.symbol} à ${data.stockInfo.price}$.` : "Pas d'action."} Réponds en français.`;
 
-    // On convertit l'historique de conversation du client en un format strict
+    // On prépare l'historique de conversation
     const history = convertToCoreMessages(messages);
+    const finalMessages = [{ role: 'system', content: systemInstruction }, ...history];
     
-    // On injecte l'instruction en tant que premier message du tableau (méthode robuste)
-    const finalMessages = [
-        { role: 'system', content: systemInstruction },
-        ...history,
-    ];
-
-    // FIX : Utilisation de generateText (non-streaming)
+    // FIX : Utilisation de generateText (NON-STREAMING)
     const response = await generateText({
       model: google('gemini-1.5-flash'),
       messages: finalMessages,
-      // Sécurité désactivée
       config: { safetySettings: [{ category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' }] },
     });
 
@@ -37,6 +30,6 @@ export async function POST(req) {
 
   } catch (error) {
     console.error("ERREUR CRITIQUE:", error);
-    return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+    return new Response(JSON.stringify({ error: error.message || "Erreur inconnue" }), { status: 500 });
   }
 }
