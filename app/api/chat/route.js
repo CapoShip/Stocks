@@ -1,34 +1,35 @@
 import { google } from '@ai-sdk/google';
 import { streamText } from 'ai';
 
-// IMPORTANT : On active le mode Edge pour que le texte arrive lettre par lettre
-export const runtime = 'edge'; 
+// On force l'utilisation de Node.js pour éviter les bugs du mode Edge
+export const runtime = 'nodejs';
 export const maxDuration = 30;
 
 export async function POST(req) {
   try {
     const { messages, data } = await req.json();
 
+    // 1. Contexte simplifié
     const contextStock = data?.stockInfo 
-      ? `Action: ${data.stockInfo.symbol}. Prix: ${data.stockInfo.price}$.`
-      : "Pas d'action spécifique.";
+      ? `Action: ${data.stockInfo.symbol} (${data.stockInfo.price}$)`
+      : "Pas d'action.";
 
+    // 2. Appel Google avec Paramètres de Sécurité DÉSACTIVÉS (Crucial)
     const result = await streamText({
-      // 1. On utilise le modèle Flash
-      // 2. IMPORTANT : On désactive les sécurités pour que Google accepte de parler de Bourse
-      model: google('gemini-1.5-flash', {
+      model: google('gemini-1.5-flash'),
+      // On désactive TOUS les filtres de sécurité qui bloquent souvent la finance
+      settings: {
         safetySettings: [
           { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
           { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
           { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
           { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
         ],
-      }),
-      // 3. On injecte les instructions comme un message utilisateur (Astuce anti-bug)
+      },
       messages: [
         {
           role: 'user',
-          content: `Tu es un expert en bourse. ${contextStock}. Réponds en français.`
+          content: `Tu es un expert bourse. ${contextStock}. Réponds en français.`
         },
         ...messages
       ],
@@ -37,7 +38,12 @@ export async function POST(req) {
     return result.toDataStreamResponse();
 
   } catch (error) {
-    console.error("ERREUR:", error);
-    return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+    console.error("CRASH SERVEUR:", error);
+    
+    // ASTUCE DE DEBUG : On renvoie l'erreur sous forme de texte pour que tu la lises !
+    return new Response(
+      `ERREUR TECHNIQUE DÉTECTÉE : ${error.message || error.toString()}`, 
+      { status: 200 } // On ment en disant que c'est OK pour afficher le texte
+    );
   }
 }
