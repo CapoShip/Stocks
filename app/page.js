@@ -1,12 +1,13 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useChat } from 'ai/react'; // IMPORT CRITIQUE POUR L'IA
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
 } from 'recharts';
 import { 
   Activity, Search, Trash2, RefreshCw, Briefcase, Globe, BarChart2, Layers, GitCompare, ExternalLink, Bot, Sparkles, ArrowRight, Star, TrendingUp, TrendingDown, ChevronDown, ChevronUp, ArrowLeft, X,
-  Cpu, Landmark, Car, Heart, Coins, Zap // NOUVELLES ICONES IMPORTÉES
+  Cpu, Landmark, Car, Heart, Coins // ICONES SECTEURS
 } from 'lucide-react';
 
 // --- CONFIGURATION ---
@@ -26,7 +27,6 @@ const MARKET_SECTORS = {
   'Crypto': ['BTC-USD', 'ETH-USD', 'SOL-USD', 'DOGE-USD']
 };
 
-// --- STYLES DES SECTEURS (NOUVEAU DESIGN) ---
 const SECTOR_STYLES = {
     'Technologie': { icon: Cpu, color: 'text-cyan-400', bg: 'bg-cyan-500/10', border: 'hover:border-cyan-500/50', gradient: 'from-cyan-500/20' },
     'Finance': { icon: Landmark, color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'hover:border-emerald-500/50', gradient: 'from-emerald-500/20' },
@@ -65,15 +65,6 @@ const timeAgo = (timestamp) => {
     } catch (e) { return ""; }
 };
 
-const generateSmartReply = (input, stock) => {
-    if (!stock) return "Veuillez d'abord sélectionner une action.";
-    const lower = input.toLowerCase();
-    
-    if (lower.includes('analyse')) return `📈 **Analyse ${stock.symbol}**\n• Tendance : ${stock.change >= 0 ? "Haussière" : "Baissière"}\n• P/E Ratio : ${stock.peRatio || 'N/A'}\n• Volatilité : ${stock.beta || 'Moyenne'}\n• Consensus : ${stock.recommendation?.replace(/_/g, ' ') || 'Neutre'}`;
-    if (lower.includes('acheter')) return `⚠️ **Avis Technique**\nLe titre est à $${stock.price}. Avec un objectif moyen à $${stock.targetPrice || '?'}, le potentiel est de ${stock.targetPrice ? ((stock.targetPrice - stock.price)/stock.price*100).toFixed(1) : 0}%.\nCeci n'est pas un conseil d'investissement.`;
-    return "Je peux analyser la tendance, les fondamentaux ou le consensus des analystes. Posez-moi une question !";
-};
-
 export default function StockApp() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [selectedStock, setSelectedStock] = useState('NVDA'); 
@@ -106,12 +97,31 @@ export default function StockApp() {
   const [compareData, setCompareData] = useState([]);
   const [loadingCompare, setLoadingCompare] = useState(false);
 
-  // IA
+  // --- IA CONFIGURATION (Vercel AI SDK) ---
   const [showAI, setShowAI] = useState(false);
-  const [aiMessages, setAiMessages] = useState([{ role: 'ai', text: "Bonjour ! Je suis votre analyste personnel." }]);
-  const [aiInput, setAiInput] = useState('');
-  const [isAiTyping, setIsAiTyping] = useState(false);
   const chatEndRef = useRef(null);
+  
+  // Utilisation du Hook useChat pour gérer l'IA
+  const { messages, input, handleInputChange, handleSubmit, isLoading } = useChat({
+    api: '/api/chat',
+    // On passe les données de l'action actuelle à l'API via le body
+    body: {
+        stockInfo: stockInfo ? {
+            symbol: stockInfo.symbol,
+            name: stockInfo.name,
+            price: stockInfo.price,
+            changePercent: stockInfo.changePercent,
+            sector: stockInfo.sector
+        } : null
+    }
+  });
+
+  // Scroll automatique quand l'IA répond
+  useEffect(() => { 
+    if (showAI) chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); 
+  }, [messages, showAI]);
+
+  // --- FIN CONFIG IA ---
 
   const fetchStockData = async (symbol, rangeKey) => {
     setLoading(true);
@@ -245,23 +255,6 @@ export default function StockApp() {
   useEffect(() => {
     if (activeTab === 'compare') fetchCompareData();
   }, [activeTab, compareList]);
-
-  const handleAiSend = (e) => {
-    e.preventDefault();
-    if (!aiInput.trim()) return;
-    const userMsg = { role: 'user', text: aiInput };
-    setAiMessages(prev => [...prev, userMsg]);
-    setAiInput('');
-    setIsAiTyping(true);
-
-    setTimeout(() => {
-        const reply = generateSmartReply(userMsg.text, stockInfo);
-        setAiMessages(prev => [...prev, { role: 'ai', text: reply }]);
-        setIsAiTyping(false);
-    }, 1000);
-  };
-
-  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [aiMessages]);
 
   const formatXAxis = (timestamp) => {
       const date = new Date(timestamp);
@@ -476,7 +469,7 @@ export default function StockApp() {
                 </div>
             )}
 
-            {/* VUE SECTEURS (DESIGN AMÉLIORÉ) */}
+            {/* VUE SECTEURS */}
             {activeTab === 'sectors' && (
                 <div className="max-w-6xl mx-auto animate-in zoom-in duration-300">
                     {selectedSector ? (
@@ -573,25 +566,50 @@ export default function StockApp() {
             )}
         </main>
 
-        {/* AI PANEL */}
+        {/* AI PANEL (VERCEL AI SDK) */}
         {showAI && (
             <div className="absolute top-0 right-0 w-full md:w-[400px] h-full bg-slate-900 border-l border-slate-800 shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-300">
                 <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950">
-                    <h3 className="font-bold text-lg flex items-center gap-2 text-purple-400"><Sparkles size={18}/> Gemini-Lite</h3>
+                    <h3 className="font-bold text-lg flex items-center gap-2 text-purple-400"><Sparkles size={18}/> Gemini-Pro</h3>
                     <button onClick={() => setShowAI(false)}><X size={20}/></button>
                 </div>
+                
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                    {aiMessages.map((msg, idx) => (
-                        <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                            <div className={`max-w-[85%] p-3 rounded-2xl text-sm whitespace-pre-line ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-200'}`}>{msg.text}</div>
+                    {/* Message d'accueil si vide */}
+                    {messages.length === 0 && (
+                        <div className="text-center text-slate-500 mt-10 text-sm">
+                            <Bot className="mx-auto mb-3 text-slate-600" size={40}/>
+                            <p>Je suis prêt à analyser {stockInfo?.symbol || "le marché"}.</p>
+                            <p>Pose-moi une question sur les tendances ou les résultats !</p>
+                        </div>
+                    )}
+                    
+                    {/* Liste des messages */}
+                    {messages.map((m) => (
+                        <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                            <div className={`max-w-[85%] p-3 rounded-2xl text-sm whitespace-pre-line ${m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-200'}`}>
+                                {m.role === 'assistant' && <span className="font-bold text-purple-400 block mb-1 text-xs">IA</span>}
+                                {m.content}
+                            </div>
                         </div>
                     ))}
-                    {isAiTyping && <div className="text-slate-500 text-xs ml-4">En train d'écrire...</div>}
+                    
+                    {/* Indicateur de chargement */}
+                    {isLoading && <div className="text-slate-500 text-xs ml-4 animate-pulse flex items-center gap-2"><Sparkles size={12}/> Analyse en cours...</div>}
                     <div ref={chatEndRef} />
                 </div>
-                <form onSubmit={handleAiSend} className="p-4 border-t border-slate-800 bg-slate-950 flex gap-2">
-                    <input type="text" value={aiInput} onChange={(e) => setAiInput(e.target.value)} placeholder="Posez une question..." className="flex-1 bg-slate-900 border border-slate-700 rounded-full px-4 py-2 text-sm focus:border-purple-500 outline-none"/>
-                    <button type="submit" disabled={!aiInput.trim()} className="p-2 bg-purple-600 rounded-full text-white"><ArrowRight size={18}/></button>
+
+                {/* Formulaire de chat */}
+                <form onSubmit={handleSubmit} className="p-4 border-t border-slate-800 bg-slate-950 flex gap-2">
+                    <input 
+                        value={input} 
+                        onChange={handleInputChange} 
+                        placeholder="Posez une question..." 
+                        className="flex-1 bg-slate-900 border border-slate-700 rounded-full px-4 py-2 text-sm focus:border-purple-500 outline-none"
+                    />
+                    <button type="submit" disabled={isLoading || !input.trim()} className="p-2 bg-purple-600 rounded-full text-white hover:bg-purple-500 transition-colors disabled:opacity-50">
+                        <ArrowRight size={18}/>
+                    </button>
                 </form>
             </div>
         )}
