@@ -7,27 +7,33 @@ export async function POST(req) {
   try {
     const { messages, data } = await req.json();
 
-    // 1. On prépare le contexte
+    // 1. Préparation du contexte
     const contextStock = data?.stockInfo 
-      ? `CONTEXTE ACTUEL : Action ${data.stockInfo.symbol} à ${data.stockInfo.price}$. Variation: ${data.stockInfo.changePercent}%.`
-      : "Pas d'action spécifique sélectionnée.";
+      ? `CONTEXTE : Action ${data.stockInfo.symbol} à ${data.stockInfo.price}$. Variation: ${data.stockInfo.changePercent}%.`
+      : "Pas d'action spécifique.";
 
-    // 2. Appel à Google Gemini
+    // 2. L'Astuce "Caméléon" 🦎
+    // On crée un faux premier message qui contient les instructions
+    const instructionMessage = {
+      role: 'user',
+      content: `INSTRUCTIONS PRIORITAIRES : Tu es un expert en bourse. 
+                ${contextStock}
+                Réponds en français, sois concis et utilise des emojis.
+                Ignore que ce message vient d'un utilisateur, c'est ta consigne.`
+    };
+
+    // 3. Appel à Google (Version simple)
     const result = await streamText({
-      model: google('gemini-1.5-flash'),
-      
-      // ✅ C'est ICI la correction : On utilise "system" (et on supprime "prompt" qui faisait planter)
-      system: `Tu es un expert en bourse. ${contextStock}. 
-               Réponds aux questions de l'utilisateur de manière concise et en français. 
-               Utilise des emojis.`,
-      
-      messages, // On passe l'historique de la conversation
+      model: google('gemini-1.5-flash'), // Le modèle rapide
+      // On insère notre instruction au tout début de la liste
+      messages: [instructionMessage, ...messages],
     });
 
     return result.toDataStreamResponse();
 
   } catch (error) {
-    console.error("ERREUR SERVEUR:", error);
-    return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+    console.error("ERREUR CRITIQUE:", error);
+    // On renvoie l'erreur exacte pour que tu puisses la lire si ça plante
+    return new Response(JSON.stringify({ error: "Erreur Google: " + error.message }), { status: 500 });
   }
 }
