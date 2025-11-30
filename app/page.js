@@ -2,10 +2,10 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell 
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
 } from 'recharts';
 import { 
-  Activity, TrendingUp, TrendingDown, Search, Plus, Trash2, RefreshCw, Briefcase, Globe, BarChart2, Layers, GitCompare, ExternalLink, MessageSquare, X, Send, Bot, Sparkles, ArrowRight, Star
+  Activity, Search, Plus, Trash2, RefreshCw, Briefcase, Globe, BarChart2, Layers, GitCompare, ExternalLink, MessageSquare, X, Send, Bot, Sparkles, ArrowRight, Star
 } from 'lucide-react';
 
 // --- CONFIGURATION ---
@@ -25,7 +25,6 @@ const MARKET_SECTORS = {
   'Crypto': ['BTC-USD', 'ETH-USD', 'SOL-USD', 'DOGE-USD']
 };
 
-// Formateurs
 const formatNumber = (num) => {
   if (!num) return '-';
   const n = parseFloat(num);
@@ -40,9 +39,8 @@ const formatSigned = (num) => {
     return (num > 0 ? '+' : '') + num.toFixed(2);
 };
 
-// --- COMPOSANT PRINCIPAL ---
 export default function StockApp() {
-  const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, sectors, compare, watchlist
+  const [activeTab, setActiveTab] = useState('dashboard');
   const [selectedStock, setSelectedStock] = useState('NVDA'); 
   const [watchlist, setWatchlist] = useState(['AAPL', 'NVDA', 'TSLA', 'AMZN']);
   
@@ -53,7 +51,7 @@ export default function StockApp() {
   const [news, setNews] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // Watchlist Data (Page dédiée)
+  // Watchlist Data
   const [watchlistData, setWatchlistData] = useState([]);
   const [loadingWatchlist, setLoadingWatchlist] = useState(false);
 
@@ -71,7 +69,7 @@ export default function StockApp() {
   // Assistant IA
   const [showAI, setShowAI] = useState(false);
   const [aiMessages, setAiMessages] = useState([
-      { role: 'ai', text: "Bonjour ! Je suis Gemini-Lite, votre analyste personnel. Je peux analyser le titre affiché ou comparer des actions. Que voulez-vous savoir ?" }
+      { role: 'ai', text: "Bonjour ! Je suis Gemini-Lite. Je peux analyser le titre affiché ou comparer des actions." }
   ]);
   const [aiInput, setAiInput] = useState('');
   const [isAiTyping, setIsAiTyping] = useState(false);
@@ -83,7 +81,6 @@ export default function StockApp() {
     try {
       const res = await fetch(`/api/stock?symbol=${symbol}&range=${range}&interval=${interval}`);
       const data = await res.json();
-      
       if (!res.ok) throw new Error(data.error);
 
       setStockInfo(data);
@@ -108,12 +105,17 @@ export default function StockApp() {
     if (activeTab === 'dashboard') fetchStockData(selectedStock, activeRange);
   }, [selectedStock, activeRange, activeTab]);
 
-  // --- 2. MOTEUR RECHERCHE ---
+  // --- 2. MOTEUR RECHERCHE (CORRIGÉ) ---
   const handleSearchChange = (e) => {
     const val = e.target.value;
     setSearchQuery(val);
+    
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
-    if (val.length < 2) { setSuggestions([]); return; }
+    
+    if (val.length < 1) { 
+        setSuggestions([]); 
+        return; 
+    }
 
     searchTimeout.current = setTimeout(async () => {
         try {
@@ -122,26 +124,60 @@ export default function StockApp() {
             setSuggestions(data.results || []);
             setShowSuggestions(true);
         } catch (e) { console.error(e); }
-    }, 400);
+    }, 300);
+  };
+
+  // Fonction pour lancer une recherche directe (Touche Entrée)
+  const handleSearchSubmit = (e) => {
+      e.preventDefault();
+      if (searchQuery.trim()) {
+          setSelectedStock(searchQuery.toUpperCase());
+          setActiveTab('dashboard');
+          setSearchQuery('');
+          setShowSuggestions(false);
+      }
   };
 
   const selectSuggestion = (symbol) => {
-    // Si on est dans le comparateur, on ajoute à la liste
     if (activeTab === 'compare') {
         if (!compareList.includes(symbol)) setCompareList([...compareList, symbol]);
-    } 
-    // Sinon on va voir le stock (Dashboard)
-    else {
+    } else {
         setSelectedStock(symbol);
         setActiveTab('dashboard');
     }
-    // Reset de la recherche
     setSearchQuery('');
     setSuggestions([]);
     setShowSuggestions(false);
   };
 
-  // --- 3. MOTEUR COMPARATEUR ---
+  // --- 3. GESTION WATCHLIST (CORRIGÉ) ---
+  const toggleWatchlist = (symbol) => {
+      if (watchlist.includes(symbol)) {
+          setWatchlist(watchlist.filter(s => s !== symbol));
+      } else {
+          setWatchlist([...watchlist, symbol]);
+      }
+  };
+
+  const fetchWatchlistData = async () => {
+    setLoadingWatchlist(true);
+    const newData = [];
+    for (const sym of watchlist) {
+        try {
+            const res = await fetch(`/api/stock?symbol=${sym}&range=1d`); 
+            const data = await res.json();
+            if (res.ok) newData.push(data);
+        } catch (e) { console.error(e); }
+    }
+    setWatchlistData(newData);
+    setLoadingWatchlist(false);
+  };
+
+  useEffect(() => {
+    if (activeTab === 'watchlist') fetchWatchlistData();
+  }, [activeTab, watchlist]);
+
+  // --- 4. COMPARATEUR ---
   const fetchCompareData = async () => {
     setLoadingCompare(true);
     const newData = [];
@@ -160,67 +196,27 @@ export default function StockApp() {
     if (activeTab === 'compare') fetchCompareData();
   }, [activeTab, compareList]);
 
-  // --- 4. MOTEUR WATCHLIST (NOUVEAU) ---
-  const fetchWatchlistData = async () => {
-    setLoadingWatchlist(true);
-    const newData = [];
-    for (const sym of watchlist) {
-        try {
-            // On récupère juste le snapshot du jour
-            const res = await fetch(`/api/stock?symbol=${sym}&range=1d`); 
-            const data = await res.json();
-            if (res.ok) newData.push(data);
-        } catch (e) { console.error(e); }
-    }
-    setWatchlistData(newData);
-    setLoadingWatchlist(false);
-  };
-
-  useEffect(() => {
-    if (activeTab === 'watchlist') fetchWatchlistData();
-  }, [activeTab, watchlist]);
-
-
-  // --- 5. CERVEAU IA ---
+  // --- 5. AI ---
   const handleAiSend = (e) => {
     e.preventDefault();
     if (!aiInput.trim()) return;
-    
     const userMsg = { role: 'user', text: aiInput };
     setAiMessages(prev => [...prev, userMsg]);
     setAiInput('');
     setIsAiTyping(true);
 
     setTimeout(() => {
-        let reply = "";
-        const lowerInput = userMsg.text.toLowerCase();
+        let reply = "Je n'ai pas compris.";
+        const lower = userMsg.text.toLowerCase();
         
-        if (!stockInfo) {
-            reply = "Je n'ai pas encore chargé de données boursières. Veuillez sélectionner une action.";
+        if (lower.includes('analyse') && stockInfo) {
+            reply = `Analyse de ${stockInfo.name}:\nTendance: ${stockInfo.change >= 0 ? 'Haussière' : 'Baissière'}\nSecteur: ${stockInfo.sector}\nP/E: ${stockInfo.peRatio || 'N/A'}`;
+        } else if (lower.includes('acheter')) {
+            reply = "Ceci n'est pas un conseil financier. Cependant, les analystes semblent " + (stockInfo?.recommendation === 'buy' ? 'optimistes.' : 'prudents.');
         } else {
-            const trend = stockInfo.change >= 0 ? "haussière 📈" : "baissière 📉";
-            const analyst = stockInfo.recommendation?.toUpperCase().replace('_', ' ');
-            const targetDiff = stockInfo.targetPrice ? ((stockInfo.targetPrice - stockInfo.price) / stockInfo.price * 100).toFixed(1) : 0;
-
-            if (lowerInput.includes('analyse') || lowerInput.includes('penser') || lowerInput.includes('avis')) {
-                reply = `Analyse rapide pour ${stockInfo.name} (${stockInfo.symbol}) :\n\n` +
-                        `1. **Tendance** : Actuellement ${trend} avec une variation de ${formatSigned(stockInfo.changePercent)}%.\n` +
-                        `2. **Valorisation** : Le P/E Ratio est de ${stockInfo.peRatio?.toFixed(2) || 'N/A'}.\n` +
-                        `3. **Analystes** : Le consensus est plutôt "${analyst}".\n` +
-                        `4. **Objectif** : Prix cible à $${stockInfo.targetPrice || '?'} (${targetDiff > 0 ? '+' : ''}${targetDiff}% potentiel).`;
-            } 
-            else if (lowerInput.includes('acheter') || lowerInput.includes('vendre')) {
-                reply = `⚠️ Je ne suis pas conseiller financier.\n\nCependant, voici les signaux techniques :\n` +
-                        `- Le titre est à $${stockInfo.price}.\n` +
-                        `- Sentiment analystes : **${analyst}**.\n` +
-                        `- Dynamique ${activeRange} : ${formatSigned(stockInfo.changePercent)}%.\n` +
-                        `${targetDiff > 10 ? "✅ Potentiel de hausse significatif selon les analystes." : "⚠️ Proche de son prix cible max."}`;
-            }
-            else {
-                reply = `Je peux analyser la tendance, le consensus des analystes ou les fondamentaux de ${stockInfo.symbol}. Essayez de demander "Analyse ce titre" ou "Faut-il acheter ?".`;
-            }
+            reply = "Je peux analyser une action ou comparer des données. Essayez 'Analyse ce titre'.";
         }
-
+        
         setAiMessages(prev => [...prev, { role: 'ai', text: reply }]);
         setIsAiTyping(false);
     }, 800);
@@ -256,15 +252,16 @@ export default function StockApp() {
         
         {/* Header */}
         <header className="h-16 border-b border-slate-800 flex items-center justify-between px-6 bg-slate-950/80 backdrop-blur z-20">
-            <div className="relative w-96">
+            <form onSubmit={handleSearchSubmit} className="relative w-96">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                 <input 
                     type="text" 
                     className="w-full bg-slate-900 border border-slate-700 rounded-full pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-blue-500"
-                    placeholder={activeTab === 'compare' ? "Ajouter au comparateur..." : "Rechercher une action..."}
+                    placeholder={activeTab === 'compare' ? "Ajouter au comparateur..." : "Rechercher (ex: Apple)..."}
                     value={searchQuery}
                     onChange={handleSearchChange}
                     onFocus={() => setShowSuggestions(true)}
+                    // Petit délai pour permettre le clic sur la suggestion
                     onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                 />
                 {showSuggestions && suggestions.length > 0 && (
@@ -273,14 +270,14 @@ export default function StockApp() {
                             <div key={s.symbol} onClick={() => selectSuggestion(s.symbol)} className="p-3 hover:bg-slate-800 cursor-pointer border-b border-slate-800 last:border-0">
                                 <div className="flex justify-between">
                                     <span className="font-bold text-white">{s.symbol}</span>
-                                    <span className="text-xs text-slate-500">{s.exch} - {s.type}</span>
+                                    <span className="text-xs text-slate-500">{s.exch}</span>
                                 </div>
                                 <div className="text-xs text-slate-400 truncate">{s.name}</div>
                             </div>
                         ))}
                     </div>
                 )}
-            </div>
+            </form>
             
             <button 
                 onClick={() => setShowAI(!showAI)}
@@ -297,13 +294,16 @@ export default function StockApp() {
             {/* VUE DASHBOARD */}
             {activeTab === 'dashboard' && stockInfo && (
                 <div className="space-y-6 max-w-7xl mx-auto pb-20">
-                    
-                    {/* En-tête Stock */}
                     <div className="flex flex-col md:flex-row justify-between items-end gap-4">
                         <div>
                             <h1 className="text-3xl font-bold text-white flex items-center gap-2">
                                 {stockInfo.name} <span className="text-xl text-slate-500">({stockInfo.symbol})</span>
-                                <button onClick={() => !watchlist.includes(stockInfo.symbol) && setWatchlist([...watchlist, stockInfo.symbol])} className="text-slate-600 hover:text-yellow-400 transition-colors"><Plus/></button>
+                                <button 
+                                    onClick={() => toggleWatchlist(stockInfo.symbol)} 
+                                    className={`ml-2 transition-colors ${watchlist.includes(stockInfo.symbol) ? 'text-yellow-400' : 'text-slate-600 hover:text-yellow-400'}`}
+                                >
+                                    <Star fill={watchlist.includes(stockInfo.symbol) ? "currentColor" : "none"} />
+                                </button>
                             </h1>
                             <div className="flex items-baseline gap-3 mt-1">
                                 <span className="text-4xl font-bold">${stockInfo.price?.toFixed(2)}</span>
@@ -320,7 +320,6 @@ export default function StockApp() {
                         </div>
                     </div>
 
-                    {/* GRAPHIQUE */}
                     <div className="bg-slate-900 rounded-2xl p-6 border border-slate-800 shadow-xl min-h-[400px]">
                         {loading ? (
                             <div className="h-full flex items-center justify-center text-slate-500 animate-pulse">Chargement...</div>
@@ -343,17 +342,13 @@ export default function StockApp() {
                         )}
                     </div>
 
-                    {/* DÉTAILS COMPLETS & NEWS */}
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        
-                        {/* Carte Infos Détaillées */}
                         <div className="bg-slate-900 rounded-2xl p-6 border border-slate-800">
                             <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Briefcase size={18} className="text-blue-400"/> Fondamentaux</h3>
                             <div className="space-y-3 text-sm">
                                 <div className="flex justify-between py-2 border-b border-slate-800"><span className="text-slate-400">Cap. Boursière</span> <span>{formatNumber(stockInfo.mktCap)}</span></div>
                                 <div className="flex justify-between py-2 border-b border-slate-800"><span className="text-slate-400">P/E Ratio</span> <span>{stockInfo.peRatio?.toFixed(2) || '-'}</span></div>
                                 <div className="flex justify-between py-2 border-b border-slate-800"><span className="text-slate-400">Prix Cible (1A)</span> <span className="text-green-400">{stockInfo.targetPrice ? '$'+stockInfo.targetPrice : '-'}</span></div>
-                                <div className="flex justify-between py-2 border-b border-slate-800"><span className="text-slate-400">Recommandation</span> <span className="uppercase font-bold text-yellow-400">{stockInfo.recommendation?.replace(/_/g, ' ')}</span></div>
                                 <div className="flex justify-between py-2 border-b border-slate-800"><span className="text-slate-400">Secteur</span> <span className="text-right truncate w-32">{stockInfo.sector}</span></div>
                             </div>
                             <div className="mt-4 pt-4">
@@ -364,7 +359,6 @@ export default function StockApp() {
                             </div>
                         </div>
 
-                        {/* Carte Vraies Actualités */}
                         <div className="lg:col-span-2 bg-slate-900 rounded-2xl p-6 border border-slate-800">
                             <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Globe size={18} className="text-blue-400"/> Actualités en direct</h3>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -377,7 +371,6 @@ export default function StockApp() {
                                             </div>
                                             <h4 className="text-sm font-medium text-slate-200 mb-2 line-clamp-2 group-hover:text-blue-300">{n.title}</h4>
                                         </div>
-                                        {/* DATE FORMATÉE EN FRANÇAIS */}
                                         <p className="text-xs text-slate-500 mt-2">
                                             {new Date(n.providerPublishTime * 1000).toLocaleDateString('fr-FR', {
                                                 day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit'
@@ -395,7 +388,7 @@ export default function StockApp() {
                 </div>
             )}
 
-            {/* VUE WATCHLIST (MA LISTE) - NOUVEAU */}
+            {/* VUE WATCHLIST (MA LISTE) */}
             {activeTab === 'watchlist' && (
                 <div className="max-w-6xl mx-auto">
                     <div className="flex justify-between items-center mb-6">
@@ -419,14 +412,17 @@ export default function StockApp() {
                                             <div className="text-sm">{formatSigned(data.changePercent)}%</div>
                                         </div>
                                     </div>
-                                    <button onClick={(e) => { e.stopPropagation(); setWatchlist(watchlist.filter(s => s !== data.symbol)); }} className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 transition-opacity p-2">
+                                    <button 
+                                        onClick={(e) => { e.stopPropagation(); toggleWatchlist(data.symbol); }} 
+                                        className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 transition-opacity p-2"
+                                    >
                                         <Trash2 size={16}/>
                                     </button>
                                 </div>
                             ))}
                             {watchlistData.length === 0 && (
                                 <div className="col-span-full text-center py-10 text-slate-500">
-                                    Votre liste est vide. Recherchez une action et cliquez sur le "+" pour l'ajouter.
+                                    Votre liste est vide. Recherchez une action et cliquez sur l'étoile pour l'ajouter.
                                 </div>
                             )}
                         </div>
@@ -516,7 +512,7 @@ export default function StockApp() {
 
         </main>
 
-        {/* PANNEAU ASSISTANT IA (Gemini-Style) */}
+        {/* PANNEAU ASSISTANT IA */}
         {showAI && (
             <div className="absolute top-0 right-0 w-full md:w-[400px] h-full bg-slate-900 border-l border-slate-800 shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-300">
                 <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950">
