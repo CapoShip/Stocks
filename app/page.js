@@ -5,9 +5,10 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
 } from 'recharts';
 import { 
-  Activity, Search, Plus, Trash2, RefreshCw, Briefcase, Globe, BarChart2, Layers, GitCompare, ExternalLink, MessageSquare, X, Send, Bot, Sparkles, ArrowRight, Star, TrendingUp, TrendingDown, Zap
+  Activity, Search, Plus, Trash2, RefreshCw, Briefcase, Globe, BarChart2, Layers, GitCompare, ExternalLink, MessageSquare, X, Send, Bot, Sparkles, ArrowRight, Star, TrendingUp, TrendingDown, ChevronDown
 } from 'lucide-react';
 
+// --- CONFIGURATION ---
 const TIME_RANGES = {
   '1J': { label: '1J', range: '1d', interval: '5m' },
   '5J': { label: '5J', range: '5d', interval: '15m' },
@@ -18,9 +19,9 @@ const TIME_RANGES = {
 
 const MARKET_SECTORS = {
   'Technologie': ['AAPL', 'MSFT', 'NVDA', 'AMD', 'GOOGL', 'META'],
-  'Finance': ['JPM', 'BAC', 'V', 'MA', 'GS', 'MS'],
-  'Automobile': ['TSLA', 'F', 'GM', 'TM', 'RACE'],
-  'Santé': ['JNJ', 'PFE', 'LLY', 'MRK', 'ABBV'],
+  'Finance': ['JPM', 'BAC', 'V', 'MA', 'GS'],
+  'Auto': ['TSLA', 'F', 'GM', 'TM', 'RACE'],
+  'Santé': ['JNJ', 'PFE', 'LLY', 'MRK'],
   'Crypto': ['BTC-USD', 'ETH-USD', 'SOL-USD', 'DOGE-USD']
 };
 
@@ -46,60 +47,26 @@ const timeAgo = (timestamp) => {
         
         const seconds = Math.floor((new Date() - date) / 1000);
         let interval = seconds / 3600;
-        if (interval > 24) return date.toLocaleDateString();
+        if (interval > 24) return date.toLocaleDateString('fr-FR', {day: 'numeric', month: 'short'});
         if (interval > 1) return "Il y a " + Math.floor(interval) + " h";
         interval = seconds / 60;
         if (interval > 1) return "Il y a " + Math.floor(interval) + " min";
         return "À l'instant";
     } catch (e) {
-        return "Date inconnue";
+        return "";
     }
 };
 
-// --- IA AVANCÉE V2 ---
+// --- IA ---
 const generateSmartReply = (input, stock) => {
-    if (!stock) return "Veuillez d'abord sélectionner une action pour que je puisse l'analyser.";
-    
+    if (!stock) return "Veuillez d'abord sélectionner une action.";
     const lower = input.toLowerCase();
-    const trend = stock.change >= 0 ? "haussière 🟢" : "baissière 🔴";
-    const analystRec = stock.recommendation?.toUpperCase().replace(/_/g, ' ') || "NEUTRE";
-    const upside = stock.targetPrice ? ((stock.targetPrice - stock.price) / stock.price * 100).toFixed(1) : 0;
-    const vol = stock.volume > 1000000 ? "élevé" : "faible";
-
-    if (lower.includes('analyse') || lower.includes('avis') || lower.includes('pense')) {
-        return `📊 **Analyse Flash de ${stock.symbol}** :\n\n` +
-               `1. **Tendance** : Le titre est en dynamique **${trend}** sur la période (${formatSigned(stock.changePercent)}%).\n` +
-               `2. **Valorisation** : P/E de ${stock.peRatio?.toFixed(2) || 'N/A'}. ${stock.peRatio > 40 ? "C'est cher payé (croissance forte attendue)." : "C'est une valorisation standard."}\n` +
-               `3. **Volume** : L'activité est ${vol}, ce qui montre ${vol === 'élevé' ? "un fort intérêt" : "peu d'intérêt"} des investisseurs.\n` +
-               `4. **Consensus** : Les pros disent **"${analystRec}"** avec une cible à ${stock.targetPrice || '?'} $.`;
-    }
     
-    if (lower.includes('acheter') || lower.includes('vendre') || lower.includes('investir')) {
-        let signal = "NEUTRE";
-        if (stock.changePercent > 0 && upside > 10) signal = "ACHAT (Offensif)";
-        else if (stock.changePercent < -5) signal = "SURVEILLANCE (Rebond possible)";
-        else if (upside < 0) signal = "PRUDENCE (Surévalué)";
+    if (lower.includes('analyse')) return `📈 **Analyse ${stock.symbol}**\n• Tendance : ${stock.change >= 0 ? "Haussière" : "Baissière"}\n• P/E Ratio : ${stock.peRatio || 'N/A'}\n• Volatilité : ${stock.beta || 'Moyenne'}\n• Consensus : ${stock.recommendation?.replace(/_/g, ' ') || 'Neutre'}`;
+    
+    if (lower.includes('acheter')) return `⚠️ **Avis Technique**\nLe titre est à $${stock.price}. Avec un objectif moyen à $${stock.targetPrice || '?'}, le potentiel est de ${stock.targetPrice ? ((stock.targetPrice - stock.price)/stock.price*100).toFixed(1) : 0}%.\nCeci n'est pas un conseil d'investissement.`;
 
-        return `🤖 **Mon avis algorithmique** :\n\n` +
-               `Signal Technique : **${signal}**\n\n` +
-               `Arguments :\n` +
-               `• Potentiel théorique : **${formatSigned(upside)}%**\n` +
-               `• Avis Analystes : ${analystRec}\n` +
-               `• Volatilité (Beta) : ${stock.beta || 'N/A'}\n\n` +
-               `*Ceci n'est pas un conseil financier, faites vos propres recherches.*`;
-    }
-
-    if (lower.includes('quoi') || lower.includes('description') || lower.includes('secteur')) {
-        return `🏢 **Profil Société**\n\n` +
-               `**${stock.name}** est un géant du secteur **${stock.sector}**.\n` +
-               `Ils pèsent **${stock.mktCap}** en bourse.\n\n` +
-               `Activités principales :\n${stock.description?.substring(0, 250)}...`;
-    }
-
-    return `Je suis votre copilote de marché 🧠. Demandez-moi :\n` +
-           `• "Donne-moi une analyse complète"\n` +
-           `• "Est-ce le moment d'acheter ?"\n` +
-           `• "C'est quoi cette entreprise ?"`;
+    return "Je peux analyser la tendance, les fondamentaux ou le consensus des analystes. Posez-moi une question !";
 };
 
 export default function StockApp() {
@@ -107,35 +74,40 @@ export default function StockApp() {
   const [selectedStock, setSelectedStock] = useState('NVDA'); 
   const [watchlist, setWatchlist] = useState(['AAPL', 'NVDA', 'TSLA', 'AMZN']);
   
+  // Dashboard
   const [activeRange, setActiveRange] = useState('1M');
   const [stockInfo, setStockInfo] = useState(null);
   const [chartData, setChartData] = useState([]);
   const [news, setNews] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [visibleNewsCount, setVisibleNewsCount] = useState(4); // Nombre de news visibles par défaut
 
+  // Watchlist
   const [watchlistData, setWatchlistData] = useState([]);
   const [loadingWatchlist, setLoadingWatchlist] = useState(false);
 
+  // Recherche
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const searchTimeout = useRef(null);
 
+  // Comparateur
   const [compareList, setCompareList] = useState(['AAPL', 'MSFT', 'GOOGL']);
   const [compareData, setCompareData] = useState([]);
   const [loadingCompare, setLoadingCompare] = useState(false);
 
+  // IA
   const [showAI, setShowAI] = useState(false);
-  const [aiMessages, setAiMessages] = useState([
-      { role: 'ai', text: "Bonjour ! Je suis votre IA de trading. Analysez un titre et demandez-moi mon avis !" }
-  ]);
+  const [aiMessages, setAiMessages] = useState([{ role: 'ai', text: "Bonjour ! Je suis votre analyste personnel." }]);
   const [aiInput, setAiInput] = useState('');
   const [isAiTyping, setIsAiTyping] = useState(false);
   const chatEndRef = useRef(null);
 
-  // FETCH DASHBOARD
+  // --- FETCH DASHBOARD ---
   const fetchStockData = async (symbol, rangeKey) => {
     setLoading(true);
+    setVisibleNewsCount(4); // Reset news count on new stock
     const { range, interval } = TIME_RANGES[rangeKey];
     try {
       const res = await fetch(`/api/stock?symbol=${symbol}&range=${range}&interval=${interval}`);
@@ -147,10 +119,13 @@ export default function StockApp() {
       
       const formattedChart = (data.chart || []).map(item => {
         const d = new Date(item.date);
-        let label = (rangeKey === '1J' || rangeKey === '5J') 
-          ? d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})
-          : d.toLocaleDateString([], {day:'2-digit', month:'2-digit'});
-        return { name: label, prix: item.prix };
+        let label = "";
+        // Formatage court des dates pour l'axe X
+        if (rangeKey === '1J') label = d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+        else if (rangeKey === '5J') label = d.toLocaleDateString([], {weekday:'short', hour:'2-digit'});
+        else label = d.toLocaleDateString([], {day:'numeric', month:'short'}); // ex: 24 Nov
+        
+        return { name: label, prix: item.prix, fullDate: d.toLocaleString() };
       });
       setChartData(formattedChart);
     } catch (err) {
@@ -164,7 +139,7 @@ export default function StockApp() {
     if (activeTab === 'dashboard') fetchStockData(selectedStock, activeRange);
   }, [selectedStock, activeRange, activeTab]);
 
-  // SEARCH
+  // --- RECHERCHE ---
   const handleSearchChange = (e) => {
     const val = e.target.value;
     setSearchQuery(val);
@@ -193,7 +168,7 @@ export default function StockApp() {
     setShowSuggestions(false);
   };
 
-  // WATCHLIST
+  // --- WATCHLIST ---
   const toggleWatchlist = (symbol) => {
       if (watchlist.includes(symbol)) setWatchlist(watchlist.filter(s => s !== symbol));
       else setWatchlist([...watchlist, symbol]);
@@ -217,7 +192,7 @@ export default function StockApp() {
     if (activeTab === 'watchlist') fetchWatchlistData();
   }, [activeTab, watchlist]);
 
-  // COMPARE
+  // --- COMPARE ---
   const fetchCompareData = async () => {
     setLoadingCompare(true);
     const newData = [];
@@ -236,7 +211,7 @@ export default function StockApp() {
     if (activeTab === 'compare') fetchCompareData();
   }, [activeTab, compareList]);
 
-  // AI SEND
+  // --- AI ---
   const handleAiSend = (e) => {
     e.preventDefault();
     if (!aiInput.trim()) return;
@@ -368,13 +343,31 @@ export default function StockApp() {
                                         </linearGradient>
                                     </defs>
                                     <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false}/>
-                                    <XAxis dataKey="name" tick={{fill:'#64748b', fontSize:11}} minTickGap={40} axisLine={false} tickLine={false} dy={10}/>
-                                    <YAxis orientation="right" domain={['auto','auto']} tick={{fill:'#64748b', fontSize:11}} tickFormatter={(v)=>v.toFixed(2)} axisLine={false} tickLine={false} dx={10}/>
+                                    {/* FIX AXE X : minTickGap plus grand pour espacer les dates */}
+                                    <XAxis 
+                                        dataKey="name" 
+                                        tick={{fill:'#64748b', fontSize:11}} 
+                                        minTickGap={50} 
+                                        axisLine={false} 
+                                        tickLine={false} 
+                                        dy={10}
+                                    />
+                                    <YAxis 
+                                        orientation="right" 
+                                        domain={['auto','auto']} 
+                                        tick={{fill:'#64748b', fontSize:11}} 
+                                        tickFormatter={(v)=>v.toFixed(2)} 
+                                        axisLine={false} 
+                                        tickLine={false} 
+                                        dx={10}
+                                    />
                                     <Tooltip 
                                         contentStyle={{backgroundColor:'#0f172a', borderColor:'#334155', color:'#fff', borderRadius:'8px'}} 
                                         itemStyle={{color: stockInfo.change>=0?"#4ade80":"#f87171"}}
+                                        labelStyle={{color: '#94a3b8', marginBottom: '0.5rem'}}
                                         formatter={(v)=>[v.toFixed(2), 'Prix']}
                                         cursor={{ stroke: '#64748b', strokeWidth: 1, strokeDasharray: '4 4' }}
+                                        isAnimationActive={false} // Fix pour le curseur
                                     />
                                     <Area type="monotone" dataKey="prix" stroke={stockInfo.change>=0?"#4ade80":"#f87171"} strokeWidth={2} fill="url(#colorPrice)" isAnimationActive={false}/>
                                 </AreaChart>
@@ -393,29 +386,47 @@ export default function StockApp() {
                                 <div className="flex justify-between pb-2 border-b border-slate-800"><span className="text-slate-400">Secteur</span> <span className="text-right truncate w-32 text-slate-200">{stockInfo.sector}</span></div>
                             </div>
                             <div className="mt-6">
-                                <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">À propos</h4>
-                                <p className="text-xs text-slate-400 leading-relaxed line-clamp-6 hover:line-clamp-none transition-all cursor-pointer">
-                                    {stockInfo.description}
+                                <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">À propos (Résumé)</h4>
+                                <p className="text-xs text-slate-400 leading-relaxed line-clamp-4 hover:line-clamp-none transition-all cursor-pointer text-justify">
+                                    {/* FIX: Résumé du texte si trop long */}
+                                    {stockInfo.description?.length > 300 
+                                        ? stockInfo.description.substring(0, 300) + "..." 
+                                        : stockInfo.description}
                                 </p>
                             </div>
                         </div>
 
-                        <div className="lg:col-span-2 bg-slate-900 rounded-2xl p-6 border border-slate-800">
+                        <div className="lg:col-span-2 bg-slate-900 rounded-2xl p-6 border border-slate-800 flex flex-col">
                             <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Globe size={18} className="text-blue-400"/> Actualités en direct</h3>
-                            <div className="space-y-3">
-                                {news.length > 0 ? news.map((n) => (
-                                    <a key={n.uuid} href={n.link} target="_blank" rel="noreferrer" className="flex flex-col md:flex-row gap-4 p-4 rounded-xl border border-slate-800 hover:border-blue-500 hover:bg-slate-800/50 transition-all group">
-                                        <div className="flex-1">
-                                            <div className="flex justify-between items-start mb-1">
-                                                <span className="text-xs font-bold text-blue-400 bg-blue-400/10 px-2 py-0.5 rounded">{n.publisher}</span>
-                                                <span className="text-xs text-slate-500 flex items-center gap-1">
-                                                    {timeAgo(n.providerPublishTime)} <ExternalLink size={10}/>
-                                                </span>
-                                            </div>
-                                            <h4 className="text-sm font-medium text-slate-200 group-hover:text-blue-300 transition-colors leading-snug">{n.title}</h4>
-                                        </div>
-                                    </a>
-                                )) : (
+                            
+                            <div className="space-y-3 flex-1">
+                                {news.length > 0 ? (
+                                    <>
+                                        {news.slice(0, visibleNewsCount).map((n) => (
+                                            <a key={n.uuid} href={n.link} target="_blank" rel="noreferrer" className="flex flex-col md:flex-row gap-4 p-4 rounded-xl border border-slate-800 hover:border-blue-500 hover:bg-slate-800/50 transition-all group">
+                                                <div className="flex-1">
+                                                    <div className="flex justify-between items-start mb-1">
+                                                        <span className="text-xs font-bold text-blue-400 bg-blue-400/10 px-2 py-0.5 rounded">{n.publisher}</span>
+                                                        <span className="text-xs text-slate-500 flex items-center gap-1">
+                                                            {timeAgo(n.providerPublishTime)} <ExternalLink size={10}/>
+                                                        </span>
+                                                    </div>
+                                                    <h4 className="text-sm font-medium text-slate-200 group-hover:text-blue-300 transition-colors leading-snug">{n.title}</h4>
+                                                </div>
+                                            </a>
+                                        ))}
+                                        
+                                        {/* FIX: BOUTON CHARGER PLUS */}
+                                        {visibleNewsCount < news.length && (
+                                            <button 
+                                                onClick={() => setVisibleNewsCount(prev => prev + 4)}
+                                                className="w-full py-3 mt-4 flex items-center justify-center gap-2 text-sm font-medium text-slate-400 hover:text-white bg-slate-900 hover:bg-slate-800 rounded-xl border border-slate-800 transition-colors"
+                                            >
+                                                <ChevronDown size={16} /> Charger plus d'actualités
+                                            </button>
+                                        )}
+                                    </>
+                                ) : (
                                     <div className="text-center py-10 text-slate-500 bg-slate-950 rounded-xl border border-slate-800 border-dashed">
                                         Aucune actualité récente trouvée pour ce titre.
                                     </div>
@@ -513,13 +524,13 @@ export default function StockApp() {
                                 <button onClick={() => setCompareList(compareList.filter(s => s !== sym))} className="text-slate-400 hover:text-red-400 transition-colors"><Trash2 size={14}/></button>
                             </div>
                         ))}
-                        <div className="text-sm text-slate-500 flex items-center ml-2 italic">Ajoutez via la barre de recherche</div>
+                        <div className="text-sm text-slate-500 flex items-center ml-2 italic">Utilisez la barre de recherche en haut pour ajouter</div>
                     </div>
 
                     {loadingCompare ? (
                         <div className="text-center py-20 text-slate-500 animate-pulse">Comparaison en cours...</div>
                     ) : (
-                        <div className="overflow-hidden rounded-2xl border border-slate-800 shadow-xl">
+                        <div className="overflow-x-auto rounded-2xl border border-slate-800 shadow-xl">
                             <table className="w-full bg-slate-900 text-left text-sm">
                                 <thead className="bg-slate-950 text-slate-400 uppercase text-xs">
                                     <tr>
