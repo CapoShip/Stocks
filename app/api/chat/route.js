@@ -8,14 +8,13 @@ export async function POST(req) {
     const { messages, data } = await req.json();
 
     const contextStock = data?.stockInfo 
-      ? `Action: ${data.stockInfo.symbol}. Prix: ${data.stockInfo.price}$. Variation: ${data.stockInfo.changePercent}%`
+      ? `Action: ${data.stockInfo.symbol}. Prix: ${data.stockInfo.price}$.`
       : "Pas d'action sélectionnée.";
 
     const result = await streamText({
-      model: google('gemini-1.5-flash'), // Avec la mise à jour, ce modèle va marcher !
-      system: `Tu es un assistant boursier expert. 
-               Utilise ce contexte pour répondre : ${contextStock}.
-               Réponds en français, sois concis et utilise des emojis.`,
+      // ON UTILISE LE MODÈLE CLASSIQUE (Le plus compatible)
+      model: google('gemini-pro'),
+      system: `Tu es un assistant boursier. Contexte : ${contextStock}`,
       messages,
     });
 
@@ -23,6 +22,7 @@ export async function POST(req) {
 
   } catch (error) {
     console.error("ERREUR CHAT:", error);
-    return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+    // On renvoie une erreur propre
+    return new Response(JSON.stringify({ error: "Erreur IA: " + error.message }), { status: 500 });
   }
 }
