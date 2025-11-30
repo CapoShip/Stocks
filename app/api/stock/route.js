@@ -10,7 +10,6 @@ export async function GET(request) {
   if (!symbol) return NextResponse.json({ error: 'Symbole manquant' }, { status: 400 });
 
   try {
-    // --- SÉCURITÉ INSTANCIATION ---
     let yf = yahooFinance;
     // @ts-ignore
     if (yf.default) yf = yf.default;
@@ -20,14 +19,14 @@ export async function GET(request) {
     }
     if (yf.suppressNotices) yf.suppressNotices(['yahooSurvey']);
 
-    // 1. Récupération Massive de Données (Pour l'AI et l'affichage)
+    // 1. Récupération Données
     const [quote, quoteSummary, searchResult] = await Promise.all([
         yf.quote(symbol),
         yf.quoteSummary(symbol, { modules: ['summaryProfile', 'financialData', 'defaultKeyStatistics', 'recommendationTrend'] }),
         yf.search(symbol, { newsCount: 10 }) 
     ]);
     
-    // 2. Gestion Historique
+    // 2. Historique
     const today = new Date();
     const period1 = new Date(today);
 
@@ -65,10 +64,18 @@ export async function GET(request) {
         dynamicChangePercent = (dynamicChange / startPrice) * 100;
     }
 
-    // Extraction données pour l'AI
     const summary = quoteSummary.summaryProfile || {};
     const finance = quoteSummary.financialData || {};
     const stats = quoteSummary.defaultKeyStatistics || {};
+
+    // Nettoyage des news pour éviter les dates invalides
+    const cleanNews = (searchResult.news || []).map(n => ({
+        uuid: n.uuid,
+        link: n.link,
+        title: n.title,
+        publisher: n.publisher,
+        providerPublishTime: n.providerPublishTime || Date.now() / 1000 // Fallback si pas de date
+    }));
 
     const result = {
       symbol: quote.symbol,
@@ -77,11 +84,10 @@ export async function GET(request) {
       change: dynamicChange,
       changePercent: dynamicChangePercent,
       
-      // Données fondamentales enrichies
       mktCap: quote.marketCap,
       volume: quote.regularMarketVolume,
       peRatio: quote.trailingPE || null,
-      beta: stats.beta || null, // Volatilité
+      beta: stats.beta || null,
       dividendYield: summary.dividendYield || null,
       sector: summary.sector || 'N/A',
       industry: summary.industry || 'N/A',
@@ -89,10 +95,7 @@ export async function GET(request) {
       targetPrice: finance.targetMeanPrice || null,
       recommendation: finance.recommendationKey || 'none',
       
-      // Actualités
-      news: searchResult.news || [],
-      
-      // Graphique
+      news: cleanNews,
       chart: historical.map(row => ({ date: row.date, prix: row.close }))
     };
 
