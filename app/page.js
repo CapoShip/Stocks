@@ -2,10 +2,10 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell 
 } from 'recharts';
 import { 
-  Activity, TrendingUp, TrendingDown, Search, Plus, Trash2, RefreshCw, Briefcase, Globe, BarChart2, Layers, GitCompare, ExternalLink, MessageSquare, X, Send
+  Activity, TrendingUp, TrendingDown, Search, Plus, Trash2, RefreshCw, Briefcase, Globe, BarChart2, Layers, GitCompare, ExternalLink, MessageSquare, X, Send, Bot, Sparkles, ArrowRight, Star
 } from 'lucide-react';
 
 // --- CONFIGURATION ---
@@ -20,11 +20,12 @@ const TIME_RANGES = {
 const MARKET_SECTORS = {
   'Technologie': ['AAPL', 'MSFT', 'NVDA', 'AMD', 'GOOGL', 'META'],
   'Finance': ['JPM', 'BAC', 'V', 'MA', 'GS'],
-  'Automobile': ['TSLA', 'F', 'GM', 'TM', 'RACE'],
-  'Santé': ['JNJ', 'PFE', 'LLY', 'MRK', 'ABBV'],
-  'Crypto': ['BTC-USD', 'ETH-USD', 'SOL-USD', 'DOGE-USD', 'COIN']
+  'Auto': ['TSLA', 'F', 'GM', 'TM', 'RACE'],
+  'Santé': ['JNJ', 'PFE', 'LLY', 'MRK'],
+  'Crypto': ['BTC-USD', 'ETH-USD', 'SOL-USD', 'DOGE-USD']
 };
 
+// Formateurs
 const formatNumber = (num) => {
   if (!num) return '-';
   const n = parseFloat(num);
@@ -39,36 +40,50 @@ const formatSigned = (num) => {
     return (num > 0 ? '+' : '') + num.toFixed(2);
 };
 
+// --- COMPOSANT PRINCIPAL ---
 export default function StockApp() {
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, sectors, compare, watchlist
   const [selectedStock, setSelectedStock] = useState('NVDA'); 
   const [watchlist, setWatchlist] = useState(['AAPL', 'NVDA', 'TSLA', 'AMZN']);
   
-  // États Dashboard
+  // Dashboard Data
   const [activeRange, setActiveRange] = useState('1M');
   const [stockInfo, setStockInfo] = useState(null);
   const [chartData, setChartData] = useState([]);
   const [news, setNews] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // États Recherche
+  // Watchlist Data (Page dédiée)
+  const [watchlistData, setWatchlistData] = useState([]);
+  const [loadingWatchlist, setLoadingWatchlist] = useState(false);
+
+  // Recherche
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const searchTimeout = useRef(null);
 
-  // États Assistant IA
-  const [showAI, setShowAI] = useState(false);
-  const [aiMessages, setAiMessages] = useState([{ role: 'ai', text: 'Bonjour ! Je suis votre assistant financier. Posez-moi une question sur le marché.' }]);
-  const [aiInput, setAiInput] = useState('');
+  // Comparateur
+  const [compareList, setCompareList] = useState(['AAPL', 'MSFT', 'GOOGL']);
+  const [compareData, setCompareData] = useState([]);
+  const [loadingCompare, setLoadingCompare] = useState(false);
 
-  // 1. CHARGEMENT DONNÉES
+  // Assistant IA
+  const [showAI, setShowAI] = useState(false);
+  const [aiMessages, setAiMessages] = useState([
+      { role: 'ai', text: "Bonjour ! Je suis Gemini-Lite, votre analyste personnel. Je peux analyser le titre affiché ou comparer des actions. Que voulez-vous savoir ?" }
+  ]);
+  const [aiInput, setAiInput] = useState('');
+  const [isAiTyping, setIsAiTyping] = useState(false);
+
+  // --- 1. MOTEUR DASHBOARD ---
   const fetchStockData = async (symbol, rangeKey) => {
     setLoading(true);
     const { range, interval } = TIME_RANGES[rangeKey];
     try {
       const res = await fetch(`/api/stock?symbol=${symbol}&range=${range}&interval=${interval}`);
       const data = await res.json();
+      
       if (!res.ok) throw new Error(data.error);
 
       setStockInfo(data);
@@ -93,7 +108,7 @@ export default function StockApp() {
     if (activeTab === 'dashboard') fetchStockData(selectedStock, activeRange);
   }, [selectedStock, activeRange, activeTab]);
 
-  // 2. RECHERCHE INTELLIGENTE
+  // --- 2. MOTEUR RECHERCHE ---
   const handleSearchChange = (e) => {
     const val = e.target.value;
     setSearchQuery(val);
@@ -101,39 +116,114 @@ export default function StockApp() {
     if (val.length < 2) { setSuggestions([]); return; }
 
     searchTimeout.current = setTimeout(async () => {
-        const res = await fetch(`/api/search?q=${val}`);
-        const data = await res.json();
-        setSuggestions(data.results || []);
-        setShowSuggestions(true);
+        try {
+            const res = await fetch(`/api/search?q=${val}`);
+            const data = await res.json();
+            setSuggestions(data.results || []);
+            setShowSuggestions(true);
+        } catch (e) { console.error(e); }
     }, 400);
   };
 
   const selectSuggestion = (symbol) => {
-    setSelectedStock(symbol);
-    setActiveTab('dashboard');
+    // Si on est dans le comparateur, on ajoute à la liste
+    if (activeTab === 'compare') {
+        if (!compareList.includes(symbol)) setCompareList([...compareList, symbol]);
+    } 
+    // Sinon on va voir le stock (Dashboard)
+    else {
+        setSelectedStock(symbol);
+        setActiveTab('dashboard');
+    }
+    // Reset de la recherche
     setSearchQuery('');
     setSuggestions([]);
     setShowSuggestions(false);
   };
 
-  // 3. ASSISTANT IA (Simulation)
+  // --- 3. MOTEUR COMPARATEUR ---
+  const fetchCompareData = async () => {
+    setLoadingCompare(true);
+    const newData = [];
+    for (const sym of compareList) {
+        try {
+            const res = await fetch(`/api/stock?symbol=${sym}&range=1d`); 
+            const data = await res.json();
+            if (res.ok) newData.push(data);
+        } catch (e) { console.error(e); }
+    }
+    setCompareData(newData);
+    setLoadingCompare(false);
+  };
+
+  useEffect(() => {
+    if (activeTab === 'compare') fetchCompareData();
+  }, [activeTab, compareList]);
+
+  // --- 4. MOTEUR WATCHLIST (NOUVEAU) ---
+  const fetchWatchlistData = async () => {
+    setLoadingWatchlist(true);
+    const newData = [];
+    for (const sym of watchlist) {
+        try {
+            // On récupère juste le snapshot du jour
+            const res = await fetch(`/api/stock?symbol=${sym}&range=1d`); 
+            const data = await res.json();
+            if (res.ok) newData.push(data);
+        } catch (e) { console.error(e); }
+    }
+    setWatchlistData(newData);
+    setLoadingWatchlist(false);
+  };
+
+  useEffect(() => {
+    if (activeTab === 'watchlist') fetchWatchlistData();
+  }, [activeTab, watchlist]);
+
+
+  // --- 5. CERVEAU IA ---
   const handleAiSend = (e) => {
     e.preventDefault();
     if (!aiInput.trim()) return;
     
-    // Ajout message utilisateur
     const userMsg = { role: 'user', text: aiInput };
     setAiMessages(prev => [...prev, userMsg]);
     setAiInput('');
+    setIsAiTyping(true);
 
-    // Réponse simulée (Pour une vraie IA, il faudrait connecter OpenAI ici)
     setTimeout(() => {
-        let responseText = "Je peux vous aider à analyser ce titre. Regardez le ratio P/E et les volumes récents.";
-        if (aiInput.toLowerCase().includes('acheter')) responseText = "Je ne peux pas donner de conseil financier direct, mais la tendance actuelle semble " + (stockInfo?.change >= 0 ? "positive." : "négative.");
-        if (aiInput.toLowerCase().includes('analyse')) responseText = `L'action ${selectedStock} est dans le secteur ${stockInfo?.sector}. Sa capitalisation est de ${formatNumber(stockInfo?.mktCap)}.`;
+        let reply = "";
+        const lowerInput = userMsg.text.toLowerCase();
         
-        setAiMessages(prev => [...prev, { role: 'ai', text: responseText }]);
-    }, 1000);
+        if (!stockInfo) {
+            reply = "Je n'ai pas encore chargé de données boursières. Veuillez sélectionner une action.";
+        } else {
+            const trend = stockInfo.change >= 0 ? "haussière 📈" : "baissière 📉";
+            const analyst = stockInfo.recommendation?.toUpperCase().replace('_', ' ');
+            const targetDiff = stockInfo.targetPrice ? ((stockInfo.targetPrice - stockInfo.price) / stockInfo.price * 100).toFixed(1) : 0;
+
+            if (lowerInput.includes('analyse') || lowerInput.includes('penser') || lowerInput.includes('avis')) {
+                reply = `Analyse rapide pour ${stockInfo.name} (${stockInfo.symbol}) :\n\n` +
+                        `1. **Tendance** : Actuellement ${trend} avec une variation de ${formatSigned(stockInfo.changePercent)}%.\n` +
+                        `2. **Valorisation** : Le P/E Ratio est de ${stockInfo.peRatio?.toFixed(2) || 'N/A'}.\n` +
+                        `3. **Analystes** : Le consensus est plutôt "${analyst}".\n` +
+                        `4. **Objectif** : Prix cible à $${stockInfo.targetPrice || '?'} (${targetDiff > 0 ? '+' : ''}${targetDiff}% potentiel).`;
+            } 
+            else if (lowerInput.includes('acheter') || lowerInput.includes('vendre')) {
+                reply = `⚠️ Je ne suis pas conseiller financier.\n\nCependant, voici les signaux techniques :\n` +
+                        `- Le titre est à $${stockInfo.price}.\n` +
+                        `- Sentiment analystes : **${analyst}**.\n` +
+                        `- Dynamique ${activeRange} : ${formatSigned(stockInfo.changePercent)}%.\n` +
+                        `${targetDiff > 10 ? "✅ Potentiel de hausse significatif selon les analystes." : "⚠️ Proche de son prix cible max."}`;
+            }
+            else {
+                reply = `Je peux analyser la tendance, le consensus des analystes ou les fondamentaux de ${stockInfo.symbol}. Essayez de demander "Analyse ce titre" ou "Faut-il acheter ?".`;
+            }
+        }
+
+        setAiMessages(prev => [...prev, { role: 'ai', text: reply }]);
+        setIsAiTyping(false);
+    }, 800);
   };
 
   return (
@@ -149,24 +239,16 @@ export default function StockApp() {
             <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-3 p-3 rounded-xl transition-colors ${activeTab==='dashboard' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>
                 <BarChart2 size={20} /> <span className="hidden md:block">Dashboard</span>
             </button>
+            <button onClick={() => setActiveTab('watchlist')} className={`w-full flex items-center gap-3 p-3 rounded-xl transition-colors ${activeTab==='watchlist' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>
+                <Star size={20} /> <span className="hidden md:block">Ma Liste</span>
+            </button>
             <button onClick={() => setActiveTab('sectors')} className={`w-full flex items-center gap-3 p-3 rounded-xl transition-colors ${activeTab==='sectors' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>
                 <Layers size={20} /> <span className="hidden md:block">Marché</span>
             </button>
+            <button onClick={() => setActiveTab('compare')} className={`w-full flex items-center gap-3 p-3 rounded-xl transition-colors ${activeTab==='compare' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>
+                <GitCompare size={20} /> <span className="hidden md:block">Comparateur</span>
+            </button>
         </nav>
-
-        {activeTab === 'dashboard' && (
-            <div className="p-4 hidden md:block border-t border-slate-800">
-                <h3 className="text-xs font-bold text-slate-500 uppercase mb-3">Watchlist</h3>
-                <div className="space-y-1">
-                    {watchlist.map(sym => (
-                        <div key={sym} onClick={() => setSelectedStock(sym)} className={`flex justify-between p-2 rounded cursor-pointer ${selectedStock===sym ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-900'}`}>
-                            <span>{sym}</span>
-                            <Trash2 size={14} onClick={(e)=>{e.stopPropagation(); setWatchlist(watchlist.filter(s=>s!==sym))}} className="hover:text-red-400"/>
-                        </div>
-                    ))}
-                </div>
-            </div>
-        )}
       </div>
 
       {/* Main Content */}
@@ -179,7 +261,7 @@ export default function StockApp() {
                 <input 
                     type="text" 
                     className="w-full bg-slate-900 border border-slate-700 rounded-full pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-blue-500"
-                    placeholder="Rechercher une action (ex: Tesla)..."
+                    placeholder={activeTab === 'compare' ? "Ajouter au comparateur..." : "Rechercher une action..."}
                     value={searchQuery}
                     onChange={handleSearchChange}
                     onFocus={() => setShowSuggestions(true)}
@@ -191,7 +273,7 @@ export default function StockApp() {
                             <div key={s.symbol} onClick={() => selectSuggestion(s.symbol)} className="p-3 hover:bg-slate-800 cursor-pointer border-b border-slate-800 last:border-0">
                                 <div className="flex justify-between">
                                     <span className="font-bold text-white">{s.symbol}</span>
-                                    <span className="text-xs text-slate-500">{s.exch}</span>
+                                    <span className="text-xs text-slate-500">{s.exch} - {s.type}</span>
                                 </div>
                                 <div className="text-xs text-slate-400 truncate">{s.name}</div>
                             </div>
@@ -202,15 +284,17 @@ export default function StockApp() {
             
             <button 
                 onClick={() => setShowAI(!showAI)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-full border transition-colors ${showAI ? 'bg-purple-600 border-purple-600 text-white' : 'border-slate-700 text-slate-400 hover:text-white'}`}
+                className={`flex items-center gap-2 px-4 py-2 rounded-full border transition-all ${showAI ? 'bg-purple-600 border-purple-600 text-white shadow-lg shadow-purple-900/50' : 'border-slate-700 text-slate-400 hover:text-white'}`}
             >
-                <MessageSquare size={18} /> <span>Assistant IA</span>
+                {showAI ? <Sparkles size={18} className="animate-pulse"/> : <Bot size={18} />} 
+                <span>Assistant AI</span>
             </button>
         </header>
 
         {/* Scrollable Area */}
         <main className="flex-1 overflow-y-auto p-6 bg-slate-950 relative">
             
+            {/* VUE DASHBOARD */}
             {activeTab === 'dashboard' && stockInfo && (
                 <div className="space-y-6 max-w-7xl mx-auto pb-20">
                     
@@ -219,7 +303,7 @@ export default function StockApp() {
                         <div>
                             <h1 className="text-3xl font-bold text-white flex items-center gap-2">
                                 {stockInfo.name} <span className="text-xl text-slate-500">({stockInfo.symbol})</span>
-                                <button onClick={() => !watchlist.includes(stockInfo.symbol) && setWatchlist([...watchlist, stockInfo.symbol])} className="text-slate-600 hover:text-yellow-400"><Plus/></button>
+                                <button onClick={() => !watchlist.includes(stockInfo.symbol) && setWatchlist([...watchlist, stockInfo.symbol])} className="text-slate-600 hover:text-yellow-400 transition-colors"><Plus/></button>
                             </h1>
                             <div className="flex items-baseline gap-3 mt-1">
                                 <span className="text-4xl font-bold">${stockInfo.price?.toFixed(2)}</span>
@@ -269,7 +353,7 @@ export default function StockApp() {
                                 <div className="flex justify-between py-2 border-b border-slate-800"><span className="text-slate-400">Cap. Boursière</span> <span>{formatNumber(stockInfo.mktCap)}</span></div>
                                 <div className="flex justify-between py-2 border-b border-slate-800"><span className="text-slate-400">P/E Ratio</span> <span>{stockInfo.peRatio?.toFixed(2) || '-'}</span></div>
                                 <div className="flex justify-between py-2 border-b border-slate-800"><span className="text-slate-400">Prix Cible (1A)</span> <span className="text-green-400">{stockInfo.targetPrice ? '$'+stockInfo.targetPrice : '-'}</span></div>
-                                <div className="flex justify-between py-2 border-b border-slate-800"><span className="text-slate-400">Volume</span> <span>{formatNumber(stockInfo.volume)}</span></div>
+                                <div className="flex justify-between py-2 border-b border-slate-800"><span className="text-slate-400">Recommandation</span> <span className="uppercase font-bold text-yellow-400">{stockInfo.recommendation?.replace(/_/g, ' ')}</span></div>
                                 <div className="flex justify-between py-2 border-b border-slate-800"><span className="text-slate-400">Secteur</span> <span className="text-right truncate w-32">{stockInfo.sector}</span></div>
                             </div>
                             <div className="mt-4 pt-4">
@@ -285,16 +369,25 @@ export default function StockApp() {
                             <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Globe size={18} className="text-blue-400"/> Actualités en direct</h3>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 {news.length > 0 ? news.map((n) => (
-                                    <a key={n.uuid} href={n.link} target="_blank" rel="noreferrer" className="block bg-slate-950 p-4 rounded-xl border border-slate-800 hover:border-blue-500 transition-all group">
-                                        <div className="flex justify-between items-start mb-2">
-                                            <span className="text-xs font-bold text-blue-400">{n.publisher}</span>
-                                            <ExternalLink size={12} className="text-slate-600 group-hover:text-blue-400"/>
+                                    <a key={n.uuid} href={n.link} target="_blank" rel="noreferrer" className="block bg-slate-950 p-4 rounded-xl border border-slate-800 hover:border-blue-500 transition-all group h-full flex flex-col justify-between">
+                                        <div>
+                                            <div className="flex justify-between items-start mb-2">
+                                                <span className="text-xs font-bold text-blue-400">{n.publisher}</span>
+                                                <ExternalLink size={12} className="text-slate-600 group-hover:text-blue-400"/>
+                                            </div>
+                                            <h4 className="text-sm font-medium text-slate-200 mb-2 line-clamp-2 group-hover:text-blue-300">{n.title}</h4>
                                         </div>
-                                        <h4 className="text-sm font-medium text-slate-200 mb-2 line-clamp-2">{n.title}</h4>
-                                        <p className="text-xs text-slate-500">{new Date(n.providerPublishTime * 1000).toLocaleString()}</p>
+                                        {/* DATE FORMATÉE EN FRANÇAIS */}
+                                        <p className="text-xs text-slate-500 mt-2">
+                                            {new Date(n.providerPublishTime * 1000).toLocaleDateString('fr-FR', {
+                                                day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit'
+                                            })}
+                                        </p>
                                     </a>
                                 )) : (
-                                    <div className="col-span-2 text-center py-10 text-slate-500">Aucune actualité récente trouvée pour ce titre.</div>
+                                    <div className="col-span-2 text-center py-10 text-slate-500 bg-slate-950 rounded-xl border border-slate-800 border-dashed">
+                                        Aucune actualité récente trouvée pour ce titre via l'API.
+                                    </div>
                                 )}
                             </div>
                         </div>
@@ -302,20 +395,59 @@ export default function StockApp() {
                 </div>
             )}
 
+            {/* VUE WATCHLIST (MA LISTE) - NOUVEAU */}
+            {activeTab === 'watchlist' && (
+                <div className="max-w-6xl mx-auto">
+                    <div className="flex justify-between items-center mb-6">
+                        <h2 className="text-2xl font-bold flex items-center gap-2"><Star className="text-yellow-400" fill="currentColor"/> Ma Liste de Surveillance</h2>
+                        <button onClick={fetchWatchlistData} className="p-2 bg-blue-600 rounded-lg hover:bg-blue-500 transition-colors"><RefreshCw size={20}/></button>
+                    </div>
+
+                    {loadingWatchlist ? (
+                        <div className="text-center py-20 text-slate-500 animate-pulse">Chargement de vos favoris...</div>
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {watchlistData.map(data => (
+                                <div key={data.symbol} onClick={() => { setSelectedStock(data.symbol); setActiveTab('dashboard'); }} className="bg-slate-900 border border-slate-800 rounded-2xl p-6 relative overflow-hidden cursor-pointer hover:border-blue-500 transition-all group">
+                                    <div className="flex justify-between items-start mb-4">
+                                        <div>
+                                            <h3 className="text-2xl font-bold">{data.symbol}</h3>
+                                            <div className="text-sm text-slate-400 truncate w-48">{data.name}</div>
+                                        </div>
+                                        <div className={`text-right ${data.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                            <div className="text-2xl font-bold">${data.price?.toFixed(2)}</div>
+                                            <div className="text-sm">{formatSigned(data.changePercent)}%</div>
+                                        </div>
+                                    </div>
+                                    <button onClick={(e) => { e.stopPropagation(); setWatchlist(watchlist.filter(s => s !== data.symbol)); }} className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 transition-opacity p-2">
+                                        <Trash2 size={16}/>
+                                    </button>
+                                </div>
+                            ))}
+                            {watchlistData.length === 0 && (
+                                <div className="col-span-full text-center py-10 text-slate-500">
+                                    Votre liste est vide. Recherchez une action et cliquez sur le "+" pour l'ajouter.
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
+
             {/* VUE SECTEURS */}
             {activeTab === 'sectors' && (
                 <div className="max-w-6xl mx-auto">
-                    <h2 className="text-2xl font-bold mb-6">Explorer par Secteur</h2>
+                    <h2 className="text-2xl font-bold mb-6 flex items-center gap-2"><Layers className="text-blue-500"/> Explorer les Secteurs</h2>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {Object.entries(MARKET_SECTORS).map(([sector, stocks]) => (
-                            <div key={sector} className="bg-slate-900 border border-slate-800 rounded-2xl p-6 hover:border-blue-500/50 transition-all">
+                            <div key={sector} className="bg-slate-900 border border-slate-800 rounded-2xl p-6 hover:border-blue-500/50 transition-all cursor-default">
                                 <h3 className="text-xl font-bold text-blue-400 mb-4">{sector}</h3>
                                 <div className="flex flex-wrap gap-2">
                                     {stocks.map(sym => (
                                         <button 
                                             key={sym} 
                                             onClick={() => { setSelectedStock(sym); setActiveTab('dashboard'); }}
-                                            className="px-3 py-1 bg-slate-800 hover:bg-blue-600 hover:text-white rounded-full text-sm transition-colors"
+                                            className="px-3 py-1 bg-slate-950 border border-slate-700 hover:bg-blue-600 hover:border-blue-600 hover:text-white rounded-full text-sm transition-all"
                                         >
                                             {sym}
                                         </button>
@@ -327,33 +459,101 @@ export default function StockApp() {
                 </div>
             )}
 
+            {/* VUE COMPARATEUR */}
+            {activeTab === 'compare' && (
+                <div className="max-w-6xl mx-auto">
+                    <div className="flex justify-between items-center mb-6">
+                        <h2 className="text-2xl font-bold flex items-center gap-2"><GitCompare className="text-blue-500"/> Comparateur</h2>
+                        <button onClick={fetchCompareData} className="p-2 bg-blue-600 rounded-lg hover:bg-blue-500 transition-colors"><RefreshCw size={20}/></button>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2 mb-8 bg-slate-900 p-4 rounded-xl border border-slate-800">
+                        {compareList.map(sym => (
+                            <div key={sym} className="flex items-center gap-2 bg-slate-800 px-3 py-1 rounded-lg border border-slate-700">
+                                <span className="font-bold">{sym}</span>
+                                <button onClick={() => setCompareList(compareList.filter(s => s !== sym))} className="text-slate-400 hover:text-red-400"><Trash2 size={14}/></button>
+                            </div>
+                        ))}
+                        <div className="text-sm text-slate-500 flex items-center ml-2 italic">Utilisez la barre de recherche en haut pour ajouter</div>
+                    </div>
+
+                    {loadingCompare ? (
+                        <div className="text-center py-20 text-slate-500 animate-pulse">Chargement du tableau comparatif...</div>
+                    ) : (
+                        <div className="overflow-x-auto rounded-2xl border border-slate-800">
+                            <table className="w-full bg-slate-900 text-left text-sm">
+                                <thead className="bg-slate-950 text-slate-400 uppercase text-xs">
+                                    <tr>
+                                        <th className="p-4 font-semibold">Symbole</th>
+                                        <th className="p-4 font-semibold">Nom</th>
+                                        <th className="p-4 font-semibold text-right">Prix</th>
+                                        <th className="p-4 font-semibold text-right">Var. (1J)</th>
+                                        <th className="p-4 font-semibold text-right">Cap. Boursière</th>
+                                        <th className="p-4 font-semibold text-right">P/E</th>
+                                        <th className="p-4 font-semibold text-right">Secteur</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-800">
+                                    {compareData.map(data => (
+                                        <tr key={data.symbol} className="hover:bg-slate-800/50 transition-colors">
+                                            <td className="p-4 font-bold text-blue-400">{data.symbol}</td>
+                                            <td className="p-4 text-slate-300 max-w-[150px] truncate" title={data.name}>{data.name}</td>
+                                            <td className="p-4 text-right font-mono text-lg">${data.price?.toFixed(2)}</td>
+                                            <td className={`p-4 text-right font-bold ${data.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                                {formatSigned(data.changePercent)}%
+                                            </td>
+                                            <td className="p-4 text-right text-slate-300">{formatNumber(data.mktCap)}</td>
+                                            <td className="p-4 text-right text-slate-300">{data.peRatio?.toFixed(2) || '-'}</td>
+                                            <td className="p-4 text-right text-slate-400">{data.sector}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+            )}
+
         </main>
 
-        {/* PANNEAU ASSISTANT IA (Overlay) */}
+        {/* PANNEAU ASSISTANT IA (Gemini-Style) */}
         {showAI && (
-            <div className="absolute top-0 right-0 w-full md:w-96 h-full bg-slate-900 border-l border-slate-800 shadow-2xl z-40 flex flex-col animate-in slide-in-from-right duration-300">
+            <div className="absolute top-0 right-0 w-full md:w-[400px] h-full bg-slate-900 border-l border-slate-800 shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-300">
                 <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950">
-                    <h3 className="font-bold text-lg flex items-center gap-2 text-purple-400"><MessageSquare size={20}/> Assistant IA</h3>
+                    <h3 className="font-bold text-lg flex items-center gap-2 text-purple-400"><Sparkles size={18}/> Gemini-Lite Assistant</h3>
                     <button onClick={() => setShowAI(false)} className="hover:text-white text-slate-500"><X size={20}/></button>
                 </div>
-                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                
+                <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-slate-700">
                     {aiMessages.map((msg, idx) => (
                         <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                            <div className={`max-w-[80%] p-3 rounded-2xl text-sm ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-200'}`}>
+                            <div className={`max-w-[85%] p-3 rounded-2xl text-sm leading-relaxed whitespace-pre-line ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-slate-800 text-slate-200 border border-slate-700 rounded-bl-none'}`}>
                                 {msg.text}
                             </div>
                         </div>
                     ))}
+                    {isAiTyping && (
+                        <div className="flex justify-start">
+                            <div className="bg-slate-800 p-3 rounded-2xl rounded-bl-none flex gap-1">
+                                <span className="w-2 h-2 bg-slate-500 rounded-full animate-bounce"></span>
+                                <span className="w-2 h-2 bg-slate-500 rounded-full animate-bounce delay-75"></span>
+                                <span className="w-2 h-2 bg-slate-500 rounded-full animate-bounce delay-150"></span>
+                            </div>
+                        </div>
+                    )}
                 </div>
+                
                 <form onSubmit={handleAiSend} className="p-4 border-t border-slate-800 bg-slate-950 flex gap-2">
                     <input 
                         type="text" 
                         value={aiInput}
                         onChange={(e) => setAiInput(e.target.value)}
-                        placeholder="Posez une question..."
-                        className="flex-1 bg-slate-900 border border-slate-700 rounded-full px-4 py-2 text-sm focus:outline-none focus:border-purple-500"
+                        placeholder="Posez une question sur cette action..."
+                        className="flex-1 bg-slate-900 border border-slate-700 rounded-full px-4 py-2 text-sm focus:outline-none focus:border-purple-500 transition-colors"
                     />
-                    <button type="submit" className="p-2 bg-purple-600 rounded-full hover:bg-purple-500 transition-colors"><Send size={18}/></button>
+                    <button type="submit" disabled={!aiInput.trim()} className="p-2 bg-purple-600 rounded-full hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-white">
+                        <ArrowRight size={18}/>
+                    </button>
                 </form>
             </div>
         )}
