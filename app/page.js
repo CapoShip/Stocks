@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-// ATTENTION : On n'importe plus useChat car on ne streame plus
+// ATTENTION : On retire useChat pour éviter le crash de streaming
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
 } from 'recharts';
@@ -10,7 +10,7 @@ import {
   Cpu, Landmark, Car, Heart, Coins 
 } from 'lucide-react';
 
-// --- CONFIGURATION (Identique) ---
+// --- CONFIGURATION ---
 const TIME_RANGES = {
   '1J': { label: '1J', range: '1d', interval: '5m' },
   '1S': { label: '1S', range: '1wk', interval: '30m' },
@@ -97,18 +97,18 @@ export default function StockApp() {
   const [compareData, setCompareData] = useState([]);
   const [loadingCompare, setLoadingCompare] = useState(false);
 
-  // --- IA CONFIGURATION (NON-STREAMING MANUEL) ---
+  // --- IA CONFIGURATION (MANUEL & NON-STREAMING) ---
   const [showAI, setShowAI] = useState(false);
   const [userText, setUserText] = useState(''); // Input
   const [messages, setMessages] = useState([]); // Historique
-  const [isLoading, setIsLoading] = useState(false); // Loading state
-  const [error, setError] = useState(null); // Erreur
+  const [isLoadingAI, setIsLoadingAI] = useState(false); // Loading state
+  const [errorAI, setErrorAI] = useState(null); // Erreur
   const chatEndRef = useRef(null);
   
-  // Fonction d'envoi manuel
+  // Fonction d'envoi manuel (REMPLACE handleSubmit/useChat)
   const handleNonStreamingSubmit = async (e) => {
     e.preventDefault();
-    if (!userText.trim() || isLoading) return;
+    if (!userText.trim() || isLoadingAI) return;
     
     const textToSend = userText;
     const stockPayload = stockInfo ? { stockInfo: { symbol: stockInfo.symbol, price: stockInfo.price, changePercent: stockInfo.changePercent } } : {};
@@ -116,8 +116,8 @@ export default function StockApp() {
     // 1. Affiche le message de l'utilisateur
     setMessages(prev => [...prev, { id: Date.now(), role: 'user', content: textToSend }]);
     setUserText(''); // Vide l'input
-    setIsLoading(true);
-    setError(null);
+    setIsLoadingAI(true);
+    setErrorAI(null);
 
     // 2. Ajout du message dans l'historique pour le backend
     const currentMessages = [...messages, { id: Date.now(), role: 'user', content: textToSend }];
@@ -137,16 +137,16 @@ export default function StockApp() {
             throw new Error(errorData.error || `Erreur Serveur HTTP ${response.status}`);
         }
 
-        const data = await response.json(); // On s'attend à un JSON non-streaming
+        const data = await response.json(); // On s'attend à un JSON non-streaming: {text: ..., id: ...}
         
         // 3. Affiche la réponse de l'IA
         setMessages(prev => [...prev, { id: data.id || 'ai' + Date.now(), role: 'assistant', content: data.text || "La réponse de l'IA est vide." }]);
         
     } catch (err) {
         console.error("Erreur Chat:", err.message);
-        setError({ message: err.message });
+        setErrorAI({ message: err.message });
     } finally {
-        setIsLoading(false);
+        setIsLoadingAI(false);
     }
   };
 
@@ -632,18 +632,18 @@ export default function StockApp() {
                         </div>
                     ))}
                     
-                    {isLoading && <div className="text-slate-500 text-xs ml-4 animate-pulse flex items-center gap-2"><Sparkles size={12}/> Analyse en cours...</div>}
+                    {isLoadingAI && <div className="text-slate-500 text-xs ml-4 animate-pulse flex items-center gap-2"><Sparkles size={12}/> Analyse en cours...</div>}
                     <div ref={chatEndRef} />
                 </div>
 
-                <form onSubmit={handleSubmit} className="p-4 border-t border-slate-800 bg-slate-950 flex gap-2">
+                <form onSubmit={handleNonStreamingSubmit} className="p-4 border-t border-slate-800 bg-slate-950 flex gap-2">
                     <input 
-                        value={input || ''} 
-                        onChange={handleInputChange} 
+                        value={userText} 
+                        onChange={(e) => setUserText(e.target.value)} 
                         placeholder="Posez une question..." 
                         className="flex-1 bg-slate-900 border border-slate-700 rounded-full px-4 py-2 text-sm focus:border-purple-500 outline-none"
                     />
-                    <button type="submit" disabled={isLoading || !(input || '').trim()} className="p-2 bg-purple-600 rounded-full text-white hover:bg-purple-500 transition-colors disabled:opacity-50">
+                    <button type="submit" disabled={isLoadingAI || !userText.trim()} className="p-2 bg-purple-600 rounded-full text-white hover:bg-purple-500 transition-colors disabled:opacity-50">
                         <ArrowRight size={18}/>
                     </button>
                 </form>

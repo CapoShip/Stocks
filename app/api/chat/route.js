@@ -2,7 +2,7 @@ import { google } from '@ai-sdk/google';
 import { generateText, convertToCoreMessages } from 'ai'; // CHANGEMENT CRUCIAL ICI
 import { NextResponse } from 'next/server';
 
-export const maxDuration = 30; // On garde le temps long
+export const maxDuration = 30; 
 
 export async function POST(req) {
   try {
@@ -10,7 +10,7 @@ export async function POST(req) {
 
     const systemInstruction = `Tu es un expert en bourse. CONTEXTE: ${data?.stockInfo ? `Action ${data.stockInfo.symbol} à ${data.stockInfo.price}$.` : "Pas d'action."} Réponds en français.`;
 
-    // On prépare l'historique de conversation
+    // Prépare l'historique de conversation (méthode non-streaming)
     const history = convertToCoreMessages(messages);
     const finalMessages = [{ role: 'system', content: systemInstruction }, ...history];
     
