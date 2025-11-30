@@ -1,11 +1,10 @@
-import { groq } from '@ai-sdk/groq'; // 👈 Nouveau fournisseur
+import { groq } from '@ai-sdk/groq'; 
 import { generateText, convertToCoreMessages } from 'ai'; 
 import { NextResponse } from 'next/server';
 
 export const maxDuration = 30;
 
 export async function POST(req) {
-  // CRUCIAL : La clé doit être la clé Groq (gsk-...)
   if (!process.env.GROQ_API_KEY) {
     console.error("ERREUR : Clé Groq manquante sur le serveur.");
     return new Response(JSON.stringify({ error: "Clé API Groq manquante" }), { status: 500 });
@@ -19,9 +18,9 @@ export async function POST(req) {
     const history = convertToCoreMessages(messages);
     const finalMessages = [{ role: 'system', content: systemInstruction }, ...history];
     
-    // FIX FINAL : Utilisation de Groq (Llama 3)
+    // FIX FINAL : Utilisation de Llama 2 (compatible V4)
     const response = await generateText({
-      model: groq('llama3-8b-8192'), // Modèle Llama 3 rapide
+      model: groq('llama2-70b-4096'), // 👈 Changement pour un modèle compatible V4
       messages: finalMessages,
     });
 
