@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { useChat } from '@ai-sdk/react'; // Version 4 (Correct)
+import { useChat } from '@ai-sdk/react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
 } from 'recharts';
@@ -97,12 +97,12 @@ export default function StockApp() {
   const [compareData, setCompareData] = useState([]);
   const [loadingCompare, setLoadingCompare] = useState(false);
 
-  // --- IA CONFIGURATION ---
+  // --- IA CONFIGURATION (MODE MANUEL INFAILLIBLE) ---
   const [showAI, setShowAI] = useState(false);
+  const [monTexte, setMonTexte] = useState(''); // Notre gestionnaire de texte perso
   const chatEndRef = useRef(null);
   
-  // Initialisation sécurisée
-  const { messages, input, handleInputChange, handleSubmit, isLoading } = useChat({
+  const { messages, append, isLoading } = useChat({
     api: '/api/chat',
     body: {
         data: stockInfo ? {
@@ -115,9 +115,24 @@ export default function StockApp() {
             }
         } : {}
     },
-    // Si input est undefined, on le force à être une chaine vide
-    initialInput: '' 
+    onError: (err) => console.error("Erreur Chat:", err)
   });
+
+  // Fonction pour envoyer le message manuellement
+  const envoyerMessage = async (e) => {
+    e.preventDefault();
+    if (!monTexte.trim()) return;
+    
+    // On garde le texte en mémoire et on vide la boite
+    const texteAEnvoyer = monTexte;
+    setMonTexte('');
+    
+    // On l'envoie à l'IA
+    await append({
+      role: 'user',
+      content: texteAEnvoyer
+    });
+  };
 
   useEffect(() => { 
     if (showAI) chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); 
@@ -179,7 +194,6 @@ export default function StockApp() {
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
-    // PROTECTION ICI : (searchQuery || '')
     if ((searchQuery || '').trim()) {
         const target = suggestions.length > 0 ? suggestions[0].symbol : searchQuery.toUpperCase();
         selectSuggestion(target);
@@ -569,7 +583,7 @@ export default function StockApp() {
             )}
         </main>
 
-        {/* AI PANEL (VERCEL AI SDK V4) */}
+        {/* AI PANEL (MODE MANUEL) */}
         {showAI && (
             <div className="absolute top-0 right-0 w-full md:w-[400px] h-full bg-slate-900 border-l border-slate-800 shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-300">
                 <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950">
@@ -578,7 +592,6 @@ export default function StockApp() {
                 </div>
                 
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                    {/* Message d'accueil si vide */}
                     {messages.length === 0 && (
                         <div className="text-center text-slate-500 mt-10 text-sm">
                             <Bot className="mx-auto mb-3 text-slate-600" size={40}/>
@@ -587,7 +600,6 @@ export default function StockApp() {
                         </div>
                     )}
                     
-                    {/* Liste des messages avec protection anti-crash */}
                     {(messages || []).map((m) => (
                         <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                             <div className={`max-w-[85%] p-3 rounded-2xl text-sm whitespace-pre-line ${m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-200'}`}>
@@ -597,20 +609,18 @@ export default function StockApp() {
                         </div>
                     ))}
                     
-                    {/* Indicateur de chargement */}
                     {isLoading && <div className="text-slate-500 text-xs ml-4 animate-pulse flex items-center gap-2"><Sparkles size={12}/> Analyse en cours...</div>}
                     <div ref={chatEndRef} />
                 </div>
 
-                {/* Formulaire de chat - PROTECTION AJOUTÉE ICI (input || '') */}
-                <form onSubmit={handleSubmit} className="p-4 border-t border-slate-800 bg-slate-950 flex gap-2">
+                <form onSubmit={envoyerMessage} className="p-4 border-t border-slate-800 bg-slate-950 flex gap-2">
                     <input 
-                        value={input || ''} 
-                        onChange={handleInputChange} 
+                        value={monTexte} 
+                        onChange={(e) => setMonTexte(e.target.value)} 
                         placeholder="Posez une question..." 
                         className="flex-1 bg-slate-900 border border-slate-700 rounded-full px-4 py-2 text-sm focus:border-purple-500 outline-none"
                     />
-                    <button type="submit" disabled={isLoading || !(input || '').trim()} className="p-2 bg-purple-600 rounded-full text-white hover:bg-purple-500 transition-colors disabled:opacity-50">
+                    <button type="submit" disabled={isLoading || !monTexte.trim()} className="p-2 bg-purple-600 rounded-full text-white hover:bg-purple-500 transition-colors disabled:opacity-50">
                         <ArrowRight size={18}/>
                     </button>
                 </form>
