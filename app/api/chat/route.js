@@ -12,15 +12,17 @@ export async function POST(req) {
 
   try {
     const { messages, data } = await req.json();
+    
+    // 🛑 LE CORRECTIF FINAL : Assurer que messages est un tableau
+    const cleanMessages = messages || []; 
 
     const contextStock = data?.stockInfo ? `Action ${data.stockInfo.symbol} à ${data.stockInfo.price}$.` : "Pas d'action.";
 
     const systemInstruction = `Tu es un expert en bourse. CONTEXTE: ${contextStock} Réponds en français.`;
 
-    const history = convertToCoreMessages(messages);
+    const history = convertToCoreMessages(cleanMessages); // Utilisation du tableau protégé
     const finalMessages = [{ role: 'system', content: systemInstruction }, ...history];
     
-    // ✅ Le modèle V5 que nous voulons
     const response = await generateText({
       model: groq('llama3-8b-8192'), 
       messages: finalMessages,
