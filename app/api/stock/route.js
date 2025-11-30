@@ -7,7 +7,7 @@ export async function GET(request) {
   const range = searchParams.get('range') || '1d';
   const interval = searchParams.get('interval') || '15m';
 
-  if (!symbol) return NextResponse.json({ error: 'Manquant' }, { status: 400 });
+  if (!symbol) return NextResponse.json({ error: 'Symbole manquant' }, { status: 400 });
 
   try {
     let yf = yahooFinance;
@@ -19,14 +19,12 @@ export async function GET(request) {
     }
     if (yf.suppressNotices) yf.suppressNotices(['yahooSurvey']);
 
-    // 1. Récupération Données
     const [quote, quoteSummary, searchResult] = await Promise.all([
         yf.quote(symbol),
         yf.quoteSummary(symbol, { modules: ['summaryProfile', 'financialData', 'defaultKeyStatistics', 'recommendationTrend'] }),
         yf.search(symbol, { newsCount: 10 }) 
     ]);
     
-    // 2. Historique
     const today = new Date();
     const period1 = new Date(today);
 
@@ -48,9 +46,12 @@ export async function GET(request) {
 
     const chartResult = await yf.chart(symbol, queryOptions);
     let historical = (chartResult && chartResult.quotes) ? chartResult.quotes : [];
-    historical = historical.filter(row => row.date && row.close);
+    
+    // NETTOYAGE ET TRI DES DONNÉES (Pour éviter les sauts)
+    historical = historical
+        .filter(row => row.date && row.close)
+        .sort((a, b) => new Date(a.date) - new Date(b.date)); // Tri chronologique forcé
 
-    // Calcul Variation
     let dynamicChange = 0;
     let dynamicChangePercent = 0;
     const currentPrice = quote.regularMarketPrice;
@@ -68,7 +69,6 @@ export async function GET(request) {
     const finance = quoteSummary.financialData || {};
     const stats = quoteSummary.defaultKeyStatistics || {};
 
-    // Nettoyage news
     const cleanNews = (searchResult.news || []).map(n => ({
         uuid: n.uuid,
         link: n.link,
@@ -83,20 +83,15 @@ export async function GET(request) {
       price: currentPrice,
       change: dynamicChange,
       changePercent: dynamicChangePercent,
-      
-      // Données fondamentales
       mktCap: quote.marketCap,
       volume: quote.regularMarketVolume,
       peRatio: quote.trailingPE || null,
       beta: stats.beta || null,
-      high52: quote.fiftyTwoWeekHigh,
-      low52: quote.fiftyTwoWeekLow,
       sector: summary.sector || 'N/A',
       industry: summary.industry || 'N/A',
       description: summary.longBusinessSummary || 'Aucune description disponible.',
       targetPrice: finance.targetMeanPrice || null,
       recommendation: finance.recommendationKey || 'none',
-      
       news: cleanNews,
       chart: historical.map(row => ({ date: row.date, prix: row.close }))
     };

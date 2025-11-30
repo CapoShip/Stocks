@@ -10,9 +10,19 @@ export async function GET(request) {
   }
 
   try {
-    const results = await yahooFinance.search(query);
+    // --- CORRECTIF TURBOPACK (Comme pour le moteur stock) ---
+    let yf = yahooFinance;
+    // @ts-ignore
+    if (yf.default) yf = yf.default;
+    if (typeof yf === 'function') {
+        // @ts-ignore
+        yf = new yf();
+    }
+    if (yf.suppressNotices) yf.suppressNotices(['yahooSurvey']);
+    // --------------------------------------------------------
+
+    const results = await yf.search(query);
     
-    // On filtre pour garder les actions pertinentes
     const quotes = results.quotes
       .filter(q => q.isYahooFinance)
       .slice(0, 6)

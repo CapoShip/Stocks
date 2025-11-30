@@ -8,7 +8,6 @@ import {
   Activity, Search, Plus, Trash2, RefreshCw, Briefcase, Globe, BarChart2, Layers, GitCompare, ExternalLink, MessageSquare, X, Send, Bot, Sparkles, ArrowRight, Star, TrendingUp, TrendingDown, ChevronDown, ChevronUp, ArrowLeft
 } from 'lucide-react';
 
-// --- CONFIGURATION ---
 const TIME_RANGES = {
   '1J': { label: '1J', range: '1d', interval: '5m' },
   '5J': { label: '5J', range: '5d', interval: '15m' },
@@ -54,26 +53,13 @@ const timeAgo = (timestamp) => {
     } catch (e) { return ""; }
 };
 
-// --- IA AVANCÉE (Simulée localement) ---
-const generateAdvancedAnalysis = (stock) => {
-    if (!stock) return "Veuillez sélectionner une action.";
+const generateSmartReply = (input, stock) => {
+    if (!stock) return "Veuillez d'abord sélectionner une action.";
+    const lower = input.toLowerCase();
     
-    const isBullish = stock.change >= 0;
-    const analystRec = stock.recommendation?.toUpperCase().replace(/_/g, ' ') || "NEUTRE";
-    const upside = stock.targetPrice ? ((stock.targetPrice - stock.price) / stock.price * 100).toFixed(1) : 0;
-    const volatility = stock.beta > 1.5 ? "élevée" : "modérée";
-    
-    // Construction d'une réponse structurée
-    return `🤖 **Analyse IA pour ${stock.name}**\n\n` +
-           `**1. État du Marché :**\n` +
-           `Le titre s'échange à $${stock.price} avec une tendance ${isBullish ? "haussière 🟢" : "baissière 🔴"} sur la période (${formatSigned(stock.changePercent)}%).\n\n` +
-           `**2. Fondamentaux :**\n` +
-           `• P/E Ratio : ${stock.peRatio?.toFixed(2) || 'N/A'} (Valorisation)\n` +
-           `• Volatilité : ${volatility} (Beta: ${stock.beta?.toFixed(2) || '-'}) \n` +
-           `• Plus haut 52 sem : $${stock.high52}\n\n` +
-           `**3. Consensus des Pros :**\n` +
-           `Les analystes sont **${analystRec}** avec un objectif moyen à $${stock.targetPrice || '?'} (Potentiel : ${formatSigned(upside)}%).\n\n` +
-           `*Conclusion : ${upside > 15 ? "Opportunité de croissance intéressante." : "Le titre semble correctement valorisé à ce stade."}*`;
+    if (lower.includes('analyse')) return `📈 **Analyse ${stock.symbol}**\n• Tendance : ${stock.change >= 0 ? "Haussière" : "Baissière"}\n• P/E Ratio : ${stock.peRatio || 'N/A'}\n• Volatilité : ${stock.beta || 'Moyenne'}\n• Consensus : ${stock.recommendation?.replace(/_/g, ' ') || 'Neutre'}`;
+    if (lower.includes('acheter')) return `⚠️ **Avis Technique**\nLe titre est à $${stock.price}. Avec un objectif moyen à $${stock.targetPrice || '?'}, le potentiel est de ${stock.targetPrice ? ((stock.targetPrice - stock.price)/stock.price*100).toFixed(1) : 0}%.\nCeci n'est pas un conseil d'investissement.`;
+    return "Je peux analyser la tendance, les fondamentaux ou le consensus des analystes. Posez-moi une question !";
 };
 
 export default function StockApp() {
@@ -87,14 +73,15 @@ export default function StockApp() {
   const [chartData, setChartData] = useState([]);
   const [news, setNews] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [visibleNewsCount, setVisibleNewsCount] = useState(3);
+  const [visibleNewsCount, setVisibleNewsCount] = useState(4);
   const [showFullDescription, setShowFullDescription] = useState(false);
 
-  // Watchlist & Secteurs
+  // Watchlist
+  const [watchlistData, setWatchlistData] = useState([]);
+  const [loadingWatchlist, setLoadingWatchlist] = useState(false);
   const [sectorData, setSectorData] = useState([]);
   const [selectedSector, setSelectedSector] = useState(null);
   const [loadingList, setLoadingList] = useState(false);
-  const [watchlistData, setWatchlistData] = useState([]);
 
   // Recherche
   const [searchQuery, setSearchQuery] = useState('');
@@ -109,15 +96,14 @@ export default function StockApp() {
 
   // IA
   const [showAI, setShowAI] = useState(false);
-  const [aiMessages, setAiMessages] = useState([{ role: 'ai', text: "Bonjour ! Je suis Gemini-Trade. Je peux analyser en profondeur n'importe quelle action. Essayez 'Analyse complète' !" }]);
+  const [aiMessages, setAiMessages] = useState([{ role: 'ai', text: "Bonjour ! Je suis votre analyste personnel." }]);
   const [aiInput, setAiInput] = useState('');
   const [isAiTyping, setIsAiTyping] = useState(false);
   const chatEndRef = useRef(null);
 
-  // --- FETCH DASHBOARD ---
   const fetchStockData = async (symbol, rangeKey) => {
     setLoading(true);
-    setVisibleNewsCount(3);
+    setVisibleNewsCount(4);
     setShowFullDescription(false);
     const { range, interval } = TIME_RANGES[rangeKey];
     try {
@@ -130,30 +116,21 @@ export default function StockApp() {
       
       const formattedChart = (data.chart || []).map(item => {
         const d = new Date(item.date);
-        return { 
-            timestamp: d.getTime(), // Clé pour fluidité
-            prix: item.prix, 
-            dateObj: d 
-        };
+        return { timestamp: d.getTime(), prix: item.prix, dateObj: d };
       });
       setChartData(formattedChart);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
+    } catch (err) { console.error(err); } finally { setLoading(false); }
   };
 
   useEffect(() => {
     if (activeTab === 'dashboard') fetchStockData(selectedStock, activeRange);
   }, [selectedStock, activeRange, activeTab]);
 
-  // --- RECHERCHE ---
   const handleSearchChange = (e) => {
     const val = e.target.value;
     setSearchQuery(val);
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
-    if (val.length < 1) { setSuggestions([]); setShowSuggestions(false); return; }
+    if (val.length < 1) { setSuggestions([]); return; }
 
     searchTimeout.current = setTimeout(async () => {
         try {
@@ -163,6 +140,14 @@ export default function StockApp() {
             setShowSuggestions(true);
         } catch (e) { console.error(e); }
     }, 300);
+  };
+
+  const handleSearchSubmit = (e) => {
+    e.preventDefault();
+    if (searchQuery.trim()) {
+        const target = suggestions.length > 0 ? suggestions[0].symbol : searchQuery.toUpperCase();
+        selectSuggestion(target);
+    }
   };
 
   const selectSuggestion = (symbol) => {
@@ -177,8 +162,23 @@ export default function StockApp() {
     setShowSuggestions(false);
   };
 
-  // --- WATCHLIST & SECTEURS ---
+  // --- SÉCURITÉ WATCHLIST ---
+  const toggleWatchlist = (symbol) => {
+      // On s'assure que watchlist est bien un tableau
+      const currentList = Array.isArray(watchlist) ? watchlist : [];
+      
+      if (currentList.includes(symbol)) {
+          setWatchlist(currentList.filter(s => s !== symbol));
+      } else {
+          setWatchlist([...currentList, symbol]);
+      }
+  };
+
   const fetchMultipleStocks = async (symbols, targetSetter) => {
+    if (!symbols || symbols.length === 0) {
+        targetSetter([]);
+        return;
+    }
     setLoadingList(true);
     const promises = symbols.map(sym => 
         fetch(`/api/stock?symbol=${sym}&range=1d`).then(r => r.json()).catch(e => null)
@@ -188,20 +188,26 @@ export default function StockApp() {
     setLoadingList(false);
   };
 
+  // Watchlist loader
+  const fetchWatchlistData = async () => {
+    setLoadingWatchlist(true);
+    // Copie de la fonction fetchMultiple pour la watchlist spécifiquement
+    const promises = watchlist.map(sym => 
+        fetch(`/api/stock?symbol=${sym}&range=1d`).then(r => r.json()).catch(e => null)
+    );
+    const results = await Promise.all(promises);
+    setWatchlistData(results.filter(r => r && !r.error));
+    setLoadingWatchlist(false);
+  };
+
   useEffect(() => {
       if (activeTab === 'sectors' && selectedSector) fetchMultipleStocks(MARKET_SECTORS[selectedSector], setSectorData);
   }, [selectedSector, activeTab]);
 
   useEffect(() => {
-      if (activeTab === 'watchlist') fetchMultipleStocks(watchlist, setWatchlistData);
+      if (activeTab === 'watchlist') fetchWatchlistData();
   }, [activeTab, watchlist]);
 
-  const toggleWatchlist = (symbol) => {
-      if (watchlist.includes(symbol)) setWatchlist(watchlist.filter(s => s !== symbol));
-      else setWatchlist([...watchlist, symbol]);
-  };
-
-  // --- COMPARE ---
   const fetchCompareData = async () => {
     setLoadingCompare(true);
     const promises = compareList.map(sym => fetch(`/api/stock?symbol=${sym}&range=1d`).then(r => r.json()).catch(e => null));
@@ -214,7 +220,6 @@ export default function StockApp() {
     if (activeTab === 'compare') fetchCompareData();
   }, [activeTab, compareList]);
 
-  // --- AI ---
   const handleAiSend = (e) => {
     e.preventDefault();
     if (!aiInput.trim()) return;
@@ -224,10 +229,10 @@ export default function StockApp() {
     setIsAiTyping(true);
 
     setTimeout(() => {
-        const reply = generateAdvancedAnalysis(stockInfo);
+        const reply = generateSmartReply(userMsg.text, stockInfo);
         setAiMessages(prev => [...prev, { role: 'ai', text: reply }]);
         setIsAiTyping(false);
-    }, 1200);
+    }, 1000);
   };
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [aiMessages]);
@@ -263,7 +268,7 @@ export default function StockApp() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden relative">
         <header className="h-16 border-b border-slate-800 flex items-center justify-between px-6 bg-slate-950/80 backdrop-blur z-20">
-            <div className="relative w-96">
+            <form onSubmit={handleSearchSubmit} className="relative w-96">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                 <input 
                     type="text" 
@@ -272,7 +277,7 @@ export default function StockApp() {
                     value={searchQuery}
                     onChange={handleSearchChange}
                     onFocus={() => setShowSuggestions(true)}
-                    // Utilisation de onMouseDown pour la suggestion pour éviter le conflit blur/click
+                    onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                 />
                 {showSuggestions && suggestions.length > 0 && (
                     <div className="absolute top-12 left-0 w-full bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden z-50">
@@ -287,7 +292,7 @@ export default function StockApp() {
                         ))}
                     </div>
                 )}
-            </div>
+            </form>
             
             <button onClick={() => setShowAI(!showAI)} className={`flex items-center gap-2 px-4 py-2 rounded-full border transition-all ${showAI ? 'bg-purple-600 border-purple-600 text-white' : 'border-slate-700 text-slate-400 hover:text-white'}`}>
                 {showAI ? <Sparkles size={18} className="animate-pulse"/> : <Bot size={18} />} <span className="hidden md:inline font-medium">Assistant</span>
@@ -303,7 +308,12 @@ export default function StockApp() {
                         <div>
                             <h1 className="text-3xl font-bold text-white flex items-center gap-3">
                                 {stockInfo.name} <span className="text-xl text-slate-500">({stockInfo.symbol})</span>
-                                <button onClick={() => toggleWatchlist(stockInfo.symbol)} className={`transition-all hover:scale-110 ${watchlist.includes(stockInfo.symbol) ? 'text-yellow-400' : 'text-slate-600 hover:text-yellow-400'}`}><Star fill={watchlist.includes(stockInfo.symbol)?"currentColor":"none"}/></button>
+                                <button 
+                                    onClick={() => toggleWatchlist(stockInfo.symbol)} 
+                                    className={`transition-all hover:scale-110 ${watchlist.includes(stockInfo.symbol) ? 'text-yellow-400' : 'text-slate-600 hover:text-yellow-400'}`}
+                                >
+                                    <Star fill={watchlist.includes(stockInfo.symbol) ? "currentColor" : "none"} />
+                                </button>
                             </h1>
                             <div className="flex items-baseline gap-3 mt-1">
                                 <span className="text-4xl font-bold tracking-tight">${stockInfo.price?.toFixed(2)}</span>
@@ -323,7 +333,7 @@ export default function StockApp() {
 
                     <div className="bg-slate-900 rounded-2xl p-1 border border-slate-800 shadow-xl min-h-[400px]">
                         {loading ? (
-                            <div className="h-[400px] flex items-center justify-center text-slate-500 animate-pulse">Chargement...</div>
+                            <div className="h-[400px] flex items-center justify-center text-slate-500 animate-pulse">Chargement des données...</div>
                         ) : (
                             <ResponsiveContainer width="100%" height={400}>
                                 <AreaChart data={chartData} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
@@ -350,7 +360,7 @@ export default function StockApp() {
                                 <div className="flex justify-between pb-2 border-b border-slate-800"><span className="text-slate-400">Cap. Boursière</span> <span className="font-mono">{formatNumber(stockInfo.mktCap)}</span></div>
                                 <div className="flex justify-between pb-2 border-b border-slate-800"><span className="text-slate-400">P/E Ratio</span> <span className="font-mono">{stockInfo.peRatio?.toFixed(2) || '-'}</span></div>
                                 <div className="flex justify-between pb-2 border-b border-slate-800"><span className="text-slate-400">Prix Cible (1A)</span> <span className="text-green-400 font-mono">{stockInfo.targetPrice ? '$'+stockInfo.targetPrice : '-'}</span></div>
-                                <div className="flex justify-between pb-2 border-b border-slate-800"><span className="text-slate-400">Volatilité (Beta)</span> <span className="font-mono">{stockInfo.beta?.toFixed(2) || '-'}</span></div>
+                                <div className="flex justify-between pb-2 border-b border-slate-800"><span className="text-slate-400">Recommandation</span> <span className="uppercase font-bold text-yellow-400 text-xs bg-yellow-400/10 px-2 py-1 rounded">{stockInfo.recommendation?.replace(/_/g, ' ')}</span></div>
                                 <div className="flex justify-between pb-2 border-b border-slate-800"><span className="text-slate-400">Secteur</span> <span className="text-right truncate w-32 text-slate-200">{stockInfo.sector}</span></div>
                             </div>
                             <div className="mt-6">
@@ -367,55 +377,60 @@ export default function StockApp() {
                         </div>
 
                         <div className="lg:col-span-2 bg-slate-900 rounded-2xl p-6 border border-slate-800 flex flex-col">
-                            <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Globe size={18} className="text-blue-400"/> Actualités</h3>
+                            <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Globe size={18} className="text-blue-400"/> Actualités en direct</h3>
                             <div className="space-y-3 flex-1">
                                 {news.length > 0 ? (
                                     <>
                                         {news.slice(0, visibleNewsCount).map((n) => (
-                                            <a key={n.uuid} href={n.link} target="_blank" rel="noreferrer" className="flex flex-col gap-1 p-3 rounded-lg border border-slate-800 hover:border-blue-500 hover:bg-slate-800/50 transition-all group">
-                                                <div className="flex justify-between items-center">
-                                                    <span className="text-xs font-bold text-blue-400">{n.publisher}</span>
-                                                    <span className="text-[10px] text-slate-500">{timeAgo(n.providerPublishTime)}</span>
+                                            <a key={n.uuid} href={n.link} target="_blank" rel="noreferrer" className="flex flex-col md:flex-row gap-4 p-4 rounded-xl border border-slate-800 hover:border-blue-500 hover:bg-slate-800/50 transition-all group">
+                                                <div className="flex-1">
+                                                    <div className="flex justify-between items-start mb-1">
+                                                        <span className="text-xs font-bold text-blue-400 bg-blue-400/10 px-2 py-0.5 rounded">{n.publisher}</span>
+                                                        <span className="text-xs text-slate-500 flex items-center gap-1">
+                                                            {timeAgo(n.providerPublishTime)} <ExternalLink size={10}/>
+                                                        </span>
+                                                    </div>
+                                                    <h4 className="text-sm font-medium text-slate-200 group-hover:text-blue-300 transition-colors leading-snug">{n.title}</h4>
                                                 </div>
-                                                <h4 className="text-sm font-medium text-slate-200 group-hover:text-blue-300 transition-colors leading-snug line-clamp-1">{n.title}</h4>
                                             </a>
                                         ))}
-                                        {news.length > 3 && (
-                                            <button onClick={() => setVisibleNewsCount(prev => prev > 3 ? 3 : prev + 3)} className="w-full py-2 mt-2 flex items-center justify-center gap-2 text-xs font-medium text-slate-400 hover:text-white bg-slate-900 hover:bg-slate-800 rounded-lg border border-slate-800 transition-colors">
-                                                {visibleNewsCount > 3 ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                                                {visibleNewsCount > 3 ? "Voir moins" : "Charger plus"}
+                                        {news.length > 4 && (
+                                            <button onClick={() => setVisibleNewsCount(prev => prev > 4 ? 4 : prev + 4)} className="w-full py-3 mt-4 flex items-center justify-center gap-2 text-sm font-medium text-slate-400 hover:text-white bg-slate-900 hover:bg-slate-800 rounded-xl border border-slate-800 transition-colors">
+                                                {visibleNewsCount > 4 ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                                                {visibleNewsCount > 4 ? "Voir moins" : "Charger plus d'actualités"}
                                             </button>
                                         )}
                                     </>
-                                ) : <div className="text-center py-10 text-slate-500">Aucune actualité récente.</div>}
+                                ) : <div className="text-center py-10 text-slate-500 bg-slate-950 rounded-xl border border-slate-800 border-dashed">Aucune actualité récente trouvée pour ce titre.</div>}
                             </div>
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* VUE WATCHLIST, SECTEURS, COMPARE (Code simplifié ici, identique à avant) */}
+            {/* VUE WATCHLIST (Code identique) */}
             {activeTab === 'watchlist' && (
                 <div className="max-w-6xl mx-auto animate-in fade-in duration-500">
-                    <h2 className="text-2xl font-bold mb-6 flex items-center gap-2"><Star className="text-yellow-400" fill="currentColor"/> Ma Liste</h2>
-                    {loadingWatchlist ? <div className="text-center py-20 text-slate-500">Chargement...</div> : 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="flex justify-between items-center mb-6">
+                        <h2 className="text-2xl font-bold flex items-center gap-2"><Star className="text-yellow-400" fill="currentColor"/> Ma Liste de Surveillance</h2>
+                        <button onClick={fetchWatchlistData} className="p-2 bg-blue-600 rounded-lg hover:bg-blue-500 transition-colors"><RefreshCw size={20}/></button>
+                    </div>
+                    {loadingWatchlist ? <div className="text-center py-20 text-slate-500 animate-pulse">Chargement...</div> : 
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {watchlistData.map(data => (
-                            <div key={data.symbol} onClick={() => { setSelectedStock(data.symbol); setActiveTab('dashboard'); }} className="bg-slate-900 border border-slate-800 rounded-xl p-4 cursor-pointer hover:border-blue-500 group relative">
-                                <div className="flex justify-between">
-                                    <span className="font-bold text-lg">{data.symbol}</span>
-                                    <div className={`text-right ${data.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                        <div className="font-bold">${data.price?.toFixed(2)}</div>
-                                        <div className="text-xs">{formatSigned(data.changePercent)}%</div>
-                                    </div>
+                            <div key={data.symbol} onClick={() => { setSelectedStock(data.symbol); setActiveTab('dashboard'); }} className="bg-slate-900 border border-slate-800 rounded-2xl p-6 relative overflow-hidden cursor-pointer hover:border-blue-500 transition-all group">
+                                <div className="flex justify-between items-start mb-4">
+                                    <div><h3 className="text-2xl font-bold">{data.symbol}</h3><div className="text-sm text-slate-400 truncate w-48">{data.name}</div></div>
+                                    <div className={`text-right ${data.change >= 0 ? 'text-green-400' : 'text-red-400'}`}><div className="text-2xl font-bold">${data.price?.toFixed(2)}</div><div className="text-sm">{formatSigned(data.changePercent)}%</div></div>
                                 </div>
-                                <button onClick={(e) => { e.stopPropagation(); toggleWatchlist(data.symbol); }} className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400"><Trash2 size={16}/></button>
+                                <button onClick={(e) => { e.stopPropagation(); toggleWatchlist(data.symbol); }} className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 p-2"><Trash2 size={16}/></button>
                             </div>
                         ))}
                     </div>}
                 </div>
             )}
 
+            {/* VUE SECTEURS */}
             {activeTab === 'sectors' && (
                 <div className="max-w-6xl mx-auto animate-in fade-in duration-500">
                     {selectedSector ? (
@@ -443,6 +458,7 @@ export default function StockApp() {
                 </div>
             )}
 
+            {/* VUE COMPARATEUR */}
             {activeTab === 'compare' && (
                 <div className="max-w-6xl mx-auto animate-in fade-in duration-500">
                     <div className="flex justify-between mb-6"><h2 className="text-2xl font-bold">Comparateur</h2><button onClick={fetchCompareData}><RefreshCw/></button></div>
