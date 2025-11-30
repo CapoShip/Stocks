@@ -5,7 +5,7 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
 } from 'recharts';
 import { 
-  Activity, Search, Plus, Trash2, RefreshCw, Briefcase, Globe, BarChart2, Layers, GitCompare, ExternalLink, MessageSquare, X, Send, Bot, Sparkles, ArrowRight, Star, TrendingUp, TrendingDown, ChevronDown, ChevronUp
+  Activity, Search, Plus, Trash2, RefreshCw, Briefcase, Globe, BarChart2, Layers, GitCompare, ExternalLink, MessageSquare, X, Send, Bot, Sparkles, ArrowRight, Star, TrendingUp, TrendingDown, ChevronDown, ChevronUp, ArrowLeft
 } from 'lucide-react';
 
 // --- CONFIGURATION ---
@@ -18,11 +18,11 @@ const TIME_RANGES = {
 };
 
 const MARKET_SECTORS = {
-  'Technologie': ['AAPL', 'MSFT', 'NVDA', 'AMD', 'GOOGL', 'META'],
-  'Finance': ['JPM', 'BAC', 'V', 'MA', 'GS'],
-  'Auto': ['TSLA', 'F', 'GM', 'TM', 'RACE'],
-  'Santé': ['JNJ', 'PFE', 'LLY', 'MRK'],
-  'Crypto': ['BTC-USD', 'ETH-USD', 'SOL-USD', 'DOGE-USD']
+  'Technologie': ['AAPL', 'MSFT', 'NVDA', 'AMD', 'GOOGL', 'META', 'INTC', 'CRM', 'ADBE'],
+  'Finance': ['JPM', 'BAC', 'V', 'MA', 'GS', 'MS', 'WFC', 'C'],
+  'Automobile': ['TSLA', 'F', 'GM', 'TM', 'RACE', 'HMC', 'STLA'],
+  'Santé': ['JNJ', 'PFE', 'LLY', 'MRK', 'ABBV', 'UNH', 'TMO'],
+  'Crypto': ['BTC-USD', 'ETH-USD', 'SOL-USD', 'DOGE-USD', 'XRP-USD', 'ADA-USD']
 };
 
 const formatNumber = (num) => {
@@ -80,14 +80,14 @@ export default function StockApp() {
   const [chartData, setChartData] = useState([]);
   const [news, setNews] = useState([]);
   const [loading, setLoading] = useState(false);
-  
-  // États d'affichage dynamique (News & Description)
   const [visibleNewsCount, setVisibleNewsCount] = useState(4);
   const [showFullDescription, setShowFullDescription] = useState(false);
 
-  // Watchlist
+  // Watchlist & Secteurs
+  const [sectorData, setSectorData] = useState([]); // Pour la vue détaillée d'un secteur
+  const [selectedSector, setSelectedSector] = useState(null); // Le secteur cliqué
+  const [loadingList, setLoadingList] = useState(false);
   const [watchlistData, setWatchlistData] = useState([]);
-  const [loadingWatchlist, setLoadingWatchlist] = useState(false);
 
   // Recherche
   const [searchQuery, setSearchQuery] = useState('');
@@ -110,8 +110,8 @@ export default function StockApp() {
   // --- FETCH DASHBOARD ---
   const fetchStockData = async (symbol, rangeKey) => {
     setLoading(true);
-    setVisibleNewsCount(4); // Reset news count
-    setShowFullDescription(false); // Reset description
+    setVisibleNewsCount(4);
+    setShowFullDescription(false);
     const { range, interval } = TIME_RANGES[rangeKey];
     try {
       const res = await fetch(`/api/stock?symbol=${symbol}&range=${range}&interval=${interval}`);
@@ -123,12 +123,12 @@ export default function StockApp() {
       
       const formattedChart = (data.chart || []).map(item => {
         const d = new Date(item.date);
-        let label = "";
-        if (rangeKey === '1J') label = d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-        else if (rangeKey === '5J') label = d.toLocaleDateString([], {weekday:'short', hour:'2-digit'});
-        else label = d.toLocaleDateString([], {day:'numeric', month:'short'});
-        
-        return { name: label, prix: item.prix, fullDate: d.toLocaleString() };
+        // FIX CURSEUR : On utilise le timestamp comme clé unique
+        return { 
+            timestamp: d.getTime(), // Clé unique numérique
+            prix: item.prix, 
+            dateObj: d // Pour le formatage
+        };
       });
       setChartData(formattedChart);
     } catch (err) {
@@ -142,7 +142,7 @@ export default function StockApp() {
     if (activeTab === 'dashboard') fetchStockData(selectedStock, activeRange);
   }, [selectedStock, activeRange, activeTab]);
 
-  // --- RECHERCHE FIX ---
+  // --- RECHERCHE ---
   const handleSearchChange = (e) => {
     const val = e.target.value;
     setSearchQuery(val);
@@ -159,11 +159,9 @@ export default function StockApp() {
     }, 300);
   };
 
-  // Nouvelle fonction pour gérer la touche "Entrée"
   const handleSearchSubmit = (e) => {
     e.preventDefault();
     if (searchQuery.trim()) {
-        // Si on a des suggestions, on prend la première, sinon on prend ce qui est écrit
         const target = suggestions.length > 0 ? suggestions[0].symbol : searchQuery.toUpperCase();
         selectSuggestion(target);
     }
@@ -181,42 +179,44 @@ export default function StockApp() {
     setShowSuggestions(false);
   };
 
-  // --- WATCHLIST ---
-  const toggleWatchlist = (symbol) => {
-      if (watchlist.includes(symbol)) setWatchlist(watchlist.filter(s => s !== symbol));
-      else setWatchlist([...watchlist, symbol]);
-  };
-
-  const fetchWatchlistData = async () => {
-    setLoadingWatchlist(true);
+  // --- SECTEURS & WATCHLIST (Multi-fetch) ---
+  const fetchMultipleStocks = async (symbols, targetSetter) => {
+    setLoadingList(true);
     const newData = [];
-    for (const sym of watchlist) {
-        try {
-            const res = await fetch(`/api/stock?symbol=${sym}&range=1d`); 
-            const data = await res.json();
-            if (res.ok) newData.push(data);
-        } catch (e) { console.error(e); }
-    }
-    setWatchlistData(newData);
-    setLoadingWatchlist(false);
+    // On fetch un par un (simple) ou Promise.all pour la vitesse
+    const promises = symbols.map(sym => 
+        fetch(`/api/stock?symbol=${sym}&range=1d`).then(r => r.json()).catch(e => null)
+    );
+    
+    const results = await Promise.all(promises);
+    const validResults = results.filter(r => r && !r.error);
+    targetSetter(validResults);
+    setLoadingList(false);
   };
 
+  // Quand on ouvre le secteur, on charge les données
   useEffect(() => {
-    if (activeTab === 'watchlist') fetchWatchlistData();
+      if (activeTab === 'sectors' && selectedSector) {
+          fetchMultipleStocks(MARKET_SECTORS[selectedSector], setSectorData);
+      }
+  }, [selectedSector, activeTab]);
+
+  // Quand on ouvre la watchlist
+  useEffect(() => {
+      if (activeTab === 'watchlist') {
+          fetchMultipleStocks(watchlist, setWatchlistData);
+      }
   }, [activeTab, watchlist]);
+
 
   // --- COMPARE ---
   const fetchCompareData = async () => {
     setLoadingCompare(true);
-    const newData = [];
-    for (const sym of compareList) {
-        try {
-            const res = await fetch(`/api/stock?symbol=${sym}&range=1d`); 
-            const data = await res.json();
-            if (res.ok) newData.push(data);
-        } catch (e) { console.error(e); }
-    }
-    setCompareData(newData);
+    const promises = compareList.map(sym => 
+        fetch(`/api/stock?symbol=${sym}&range=1d`).then(r => r.json()).catch(e => null)
+    );
+    const results = await Promise.all(promises);
+    setCompareData(results.filter(r => r && !r.error));
     setLoadingCompare(false);
   };
 
@@ -244,6 +244,14 @@ export default function StockApp() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [aiMessages]);
 
+  // FONCTION FORMATAGE AXE X (Pour le graphique)
+  const formatXAxis = (tickItem) => {
+      const date = new Date(tickItem);
+      if (activeRange === '1J') return date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+      if (activeRange === '5J') return date.toLocaleDateString([], {weekday: 'short'});
+      return date.toLocaleDateString([], {day: 'numeric', month: 'short'});
+  };
+
   return (
     <div className="flex h-screen bg-slate-950 text-slate-100 font-sans overflow-hidden">
       
@@ -257,7 +265,7 @@ export default function StockApp() {
             {['dashboard', 'watchlist', 'sectors', 'compare'].map(tab => (
                 <button 
                     key={tab}
-                    onClick={() => setActiveTab(tab)} 
+                    onClick={() => { setActiveTab(tab); if(tab==='sectors') setSelectedSector(null); }} 
                     className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${activeTab===tab ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
                 >
                     {tab === 'dashboard' && <BarChart2 size={20} />}
@@ -275,7 +283,6 @@ export default function StockApp() {
         
         {/* Header */}
         <header className="h-16 border-b border-slate-800 flex items-center justify-between px-6 bg-slate-950/80 backdrop-blur z-20">
-            {/* Ajout du formulaire pour gérer la touche Entrée */}
             <form onSubmit={handleSearchSubmit} className="relative w-96">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                 <input 
@@ -322,7 +329,10 @@ export default function StockApp() {
                             <h1 className="text-3xl font-bold text-white flex items-center gap-3">
                                 {stockInfo.name} <span className="text-xl text-slate-500">({stockInfo.symbol})</span>
                                 <button 
-                                    onClick={() => toggleWatchlist(stockInfo.symbol)} 
+                                    onClick={() => {
+                                        if (watchlist.includes(stockInfo.symbol)) setWatchlist(watchlist.filter(s => s !== stockInfo.symbol));
+                                        else setWatchlist([...watchlist, stockInfo.symbol]);
+                                    }} 
                                     className={`transition-all hover:scale-110 ${watchlist.includes(stockInfo.symbol) ? 'text-yellow-400' : 'text-slate-600 hover:text-yellow-400'}`}
                                 >
                                     <Star fill={watchlist.includes(stockInfo.symbol) ? "currentColor" : "none"} />
@@ -357,14 +367,20 @@ export default function StockApp() {
                                         </linearGradient>
                                     </defs>
                                     <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false}/>
+                                    
+                                    {/* FIX AXE X : Utilisation de Timestamp + Formatter */}
                                     <XAxis 
-                                        dataKey="name" 
+                                        dataKey="timestamp" 
+                                        type="number"
+                                        domain={['auto', 'auto']}
+                                        tickFormatter={formatXAxis}
                                         tick={{fill:'#64748b', fontSize:11}} 
                                         minTickGap={50} 
                                         axisLine={false} 
                                         tickLine={false} 
                                         dy={10}
                                     />
+                                    
                                     <YAxis 
                                         orientation="right" 
                                         domain={['auto','auto']} 
@@ -377,10 +393,10 @@ export default function StockApp() {
                                     <Tooltip 
                                         contentStyle={{backgroundColor:'#0f172a', borderColor:'#334155', color:'#fff', borderRadius:'8px'}} 
                                         itemStyle={{color: stockInfo.change>=0?"#4ade80":"#f87171"}}
-                                        labelStyle={{color: '#94a3b8', marginBottom: '0.5rem'}}
+                                        labelFormatter={(v) => new Date(v).toLocaleString()}
                                         formatter={(v)=>[v.toFixed(2), 'Prix']}
                                         cursor={{ stroke: '#64748b', strokeWidth: 1, strokeDasharray: '4 4' }}
-                                        isAnimationActive={false} // Fix pour éviter que le curseur saute
+                                        isAnimationActive={false} 
                                     />
                                     <Area type="monotone" dataKey="prix" stroke={stockInfo.change>=0?"#4ade80":"#f87171"} strokeWidth={2} fill="url(#colorPrice)" isAnimationActive={false}/>
                                 </AreaChart>
@@ -400,7 +416,6 @@ export default function StockApp() {
                             </div>
                             <div className="mt-6">
                                 <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">À propos</h4>
-                                {/* DESCRIPTION EXTENSIBLE */}
                                 <p 
                                     onClick={() => setShowFullDescription(!showFullDescription)}
                                     className="text-xs text-slate-400 leading-relaxed cursor-pointer hover:text-slate-300 transition-colors text-justify"
@@ -433,7 +448,6 @@ export default function StockApp() {
                                             </a>
                                         ))}
                                         
-                                        {/* BOUTON CHARGER PLUS / MOINS */}
                                         {news.length > 4 && (
                                             <button 
                                                 onClick={() => setVisibleNewsCount(prev => prev > 4 ? 4 : prev + 4)}
@@ -480,7 +494,7 @@ export default function StockApp() {
                                         </div>
                                     </div>
                                     <button 
-                                        onClick={(e) => { e.stopPropagation(); toggleWatchlist(data.symbol); }} 
+                                        onClick={(e) => { e.stopPropagation(); setWatchlist(watchlist.filter(s => s !== data.symbol)); }} 
                                         className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 transition-opacity p-2 bg-slate-950 rounded-full shadow-sm"
                                     >
                                         <Trash2 size={16}/>
@@ -502,28 +516,63 @@ export default function StockApp() {
             {/* VUE SECTEURS */}
             {activeTab === 'sectors' && (
                 <div className="max-w-6xl mx-auto animate-in fade-in duration-500">
-                    <h2 className="text-2xl font-bold mb-6 flex items-center gap-2"><Layers className="text-blue-500"/> Explorer les Secteurs</h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {Object.entries(MARKET_SECTORS).map(([sector, stocks]) => (
-                            <div key={sector} className="bg-slate-900 border border-slate-800 rounded-2xl p-6 hover:border-blue-500/50 transition-all hover:shadow-lg hover:shadow-blue-900/10">
-                                <h3 className="text-xl font-bold text-blue-400 mb-4 flex items-center gap-2">
-                                    {sector}
-                                    <span className="text-xs bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full ml-auto font-normal">{stocks.length} actions</span>
-                                </h3>
-                                <div className="flex flex-wrap gap-2">
-                                    {stocks.map(sym => (
-                                        <button 
-                                            key={sym} 
-                                            onClick={() => { setSelectedStock(sym); setActiveTab('dashboard'); }}
-                                            className="px-3 py-1 bg-slate-950 border border-slate-700 hover:bg-blue-600 hover:border-blue-600 hover:text-white rounded-full text-sm transition-all"
-                                        >
-                                            {sym}
-                                        </button>
+                    {/* EN-TÊTE SECTEUR AVEC RETOUR */}
+                    {selectedSector ? (
+                        <div>
+                            <button onClick={() => setSelectedSector(null)} className="flex items-center gap-2 text-slate-400 hover:text-white mb-6 transition-colors">
+                                <ArrowLeft size={20} /> Retour aux secteurs
+                            </button>
+                            <h2 className="text-2xl font-bold mb-6 text-blue-400">{selectedSector}</h2>
+                            
+                            {loadingList ? (
+                                <div className="text-center py-20 text-slate-500 animate-pulse">Chargement des actions...</div>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                    {sectorData.map(data => (
+                                        <div key={data.symbol} onClick={() => { setSelectedStock(data.symbol); setActiveTab('dashboard'); }} className="bg-slate-900 border border-slate-800 rounded-2xl p-6 cursor-pointer hover:border-blue-500 transition-all hover:shadow-lg">
+                                            <div className="flex justify-between items-start">
+                                                <div>
+                                                    <h3 className="text-lg font-bold text-white">{data.symbol}</h3>
+                                                    <p className="text-xs text-slate-400 truncate w-40">{data.name}</p>
+                                                </div>
+                                                <div className={`text-right ${data.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                                    <div className="font-bold">${data.price?.toFixed(2)}</div>
+                                                    <div className="text-xs">{formatSigned(data.changePercent)}%</div>
+                                                </div>
+                                            </div>
+                                        </div>
                                     ))}
                                 </div>
+                            )}
+                        </div>
+                    ) : (
+                        // VUE LISTE DES SECTEURS
+                        <>
+                            <h2 className="text-2xl font-bold mb-6 flex items-center gap-2"><Layers className="text-blue-500"/> Explorer les Secteurs</h2>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {Object.entries(MARKET_SECTORS).map(([sector, stocks]) => (
+                                    <div 
+                                        key={sector} 
+                                        onClick={() => setSelectedSector(sector)}
+                                        className="bg-slate-900 border border-slate-800 rounded-2xl p-6 hover:border-blue-500/50 transition-all hover:shadow-lg cursor-pointer group"
+                                    >
+                                        <h3 className="text-xl font-bold text-blue-400 mb-4 flex items-center justify-between group-hover:text-blue-300">
+                                            {sector}
+                                            <ArrowRight size={20} className="opacity-0 group-hover:opacity-100 transition-opacity"/>
+                                        </h3>
+                                        <div className="flex flex-wrap gap-2">
+                                            {stocks.slice(0, 4).map(sym => (
+                                                <span key={sym} className="text-xs bg-slate-950 text-slate-500 border border-slate-800 px-2 py-1 rounded">
+                                                    {sym}
+                                                </span>
+                                            ))}
+                                            <span className="text-xs text-slate-600 px-2 py-1">+{stocks.length - 4} autres</span>
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
-                        ))}
-                    </div>
+                        </>
+                    )}
                 </div>
             )}
 
