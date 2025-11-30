@@ -18,9 +18,9 @@ export async function POST(req) {
     const history = convertToCoreMessages(messages);
     const finalMessages = [{ role: 'system', content: systemInstruction }, ...history];
     
-    // FIX FINAL : Utilisation de Llama 2 (compatible V4)
+    // FIX FINAL : Utilisation du modèle V1 compatible (Llama 2)
     const response = await generateText({
-      model: groq('llama2-70b-4096'), // 👈 DOIT ÊTRE LA LIGNE LLA MA 2
+      model: groq('llama2-70b-4096'), // 👈 LE MODÈLE COMPATIBLE V4
       messages: finalMessages,
     });
 
