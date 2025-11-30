@@ -1,29 +1,34 @@
 import { google } from '@ai-sdk/google';
 import { streamText } from 'ai';
 
+// Autorise le serveur à réfléchir pendant 30 secondes max
 export const maxDuration = 30;
 
 export async function POST(req) {
-  const { messages, data } = await req.json();
+  try {
+    // 1. Récupération du message
+    const { messages, data } = await req.json();
 
-  const contextStock = data?.stockInfo 
-    ? `CONTEXTE ACTUEL : 
-       - Action : ${data.stockInfo.symbol} (${data.stockInfo.name})
-       - Prix : $${data.stockInfo.price}
-       - Variation du jour : ${data.stockInfo.changePercent}%
-       - Secteur : ${data.stockInfo.sector}
-       L'utilisateur regarde cette action en ce moment.`
-    : "L'utilisateur est sur le tableau de bord général.";
+    // 2. Construction du contexte
+    const contextStock = data?.stockInfo 
+      ? `Action: ${data.stockInfo.symbol}. Prix: ${data.stockInfo.price}$. Variation: ${data.stockInfo.changePercent}%`
+      : "Pas d'action sélectionnée.";
 
-  const result = await streamText({
-    // On utilise le modèle Flash, qui est rapide et gratuit
-    model: google('gemini-1.5-flash'), 
-    system: `Tu es CapoTrade, un expert boursier.
-             Ton but est d'aider l'utilisateur à comprendre les marchés.
-             Sois concis, utilise des emojis 📈.
-             Utilise ce contexte pour répondre : ${contextStock}`,
-    messages,
-  });
+    // 3. Appel à Google Gemini (VERSION CORRIGÉE)
+    const result = await streamText({
+      // On ajoute "-latest" pour forcer Google à trouver le modèle
+      model: google('gemini-1.5-flash-latest'),
+      system: `Tu es un assistant boursier expert. 
+               Utilise ce contexte pour répondre : ${contextStock}.
+               Réponds en français, sois concis et utilise des emojis.`,
+      messages,
+    });
 
-  return result.toDataStreamResponse();
+    // 4. Envoi de la réponse
+    return result.toDataStreamResponse();
+
+  } catch (error) {
+    console.error("ERREUR CHAT:", error);
+    return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+  }
 }
