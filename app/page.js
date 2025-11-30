@@ -5,7 +5,7 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
 } from 'recharts';
 import { 
-  Activity, Search, Plus, Trash2, RefreshCw, Briefcase, Globe, BarChart2, Layers, GitCompare, ExternalLink, MessageSquare, X, Send, Bot, Sparkles, ArrowRight, Star, TrendingUp, TrendingDown, ChevronDown
+  Activity, Search, Plus, Trash2, RefreshCw, Briefcase, Globe, BarChart2, Layers, GitCompare, ExternalLink, MessageSquare, X, Send, Bot, Sparkles, ArrowRight, Star, TrendingUp, TrendingDown, ChevronDown, ChevronUp
 } from 'lucide-react';
 
 // --- CONFIGURATION ---
@@ -80,7 +80,10 @@ export default function StockApp() {
   const [chartData, setChartData] = useState([]);
   const [news, setNews] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [visibleNewsCount, setVisibleNewsCount] = useState(4); // Nombre de news visibles par défaut
+  
+  // États d'affichage dynamique (News & Description)
+  const [visibleNewsCount, setVisibleNewsCount] = useState(4);
+  const [showFullDescription, setShowFullDescription] = useState(false);
 
   // Watchlist
   const [watchlistData, setWatchlistData] = useState([]);
@@ -107,7 +110,8 @@ export default function StockApp() {
   // --- FETCH DASHBOARD ---
   const fetchStockData = async (symbol, rangeKey) => {
     setLoading(true);
-    setVisibleNewsCount(4); // Reset news count on new stock
+    setVisibleNewsCount(4); // Reset news count
+    setShowFullDescription(false); // Reset description
     const { range, interval } = TIME_RANGES[rangeKey];
     try {
       const res = await fetch(`/api/stock?symbol=${symbol}&range=${range}&interval=${interval}`);
@@ -120,10 +124,9 @@ export default function StockApp() {
       const formattedChart = (data.chart || []).map(item => {
         const d = new Date(item.date);
         let label = "";
-        // Formatage court des dates pour l'axe X
         if (rangeKey === '1J') label = d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
         else if (rangeKey === '5J') label = d.toLocaleDateString([], {weekday:'short', hour:'2-digit'});
-        else label = d.toLocaleDateString([], {day:'numeric', month:'short'}); // ex: 24 Nov
+        else label = d.toLocaleDateString([], {day:'numeric', month:'short'});
         
         return { name: label, prix: item.prix, fullDate: d.toLocaleString() };
       });
@@ -139,7 +142,7 @@ export default function StockApp() {
     if (activeTab === 'dashboard') fetchStockData(selectedStock, activeRange);
   }, [selectedStock, activeRange, activeTab]);
 
-  // --- RECHERCHE ---
+  // --- RECHERCHE FIX ---
   const handleSearchChange = (e) => {
     const val = e.target.value;
     setSearchQuery(val);
@@ -154,6 +157,16 @@ export default function StockApp() {
             setShowSuggestions(true);
         } catch (e) { console.error(e); }
     }, 300);
+  };
+
+  // Nouvelle fonction pour gérer la touche "Entrée"
+  const handleSearchSubmit = (e) => {
+    e.preventDefault();
+    if (searchQuery.trim()) {
+        // Si on a des suggestions, on prend la première, sinon on prend ce qui est écrit
+        const target = suggestions.length > 0 ? suggestions[0].symbol : searchQuery.toUpperCase();
+        selectSuggestion(target);
+    }
   };
 
   const selectSuggestion = (symbol) => {
@@ -262,7 +275,8 @@ export default function StockApp() {
         
         {/* Header */}
         <header className="h-16 border-b border-slate-800 flex items-center justify-between px-6 bg-slate-950/80 backdrop-blur z-20">
-            <div className="relative w-96">
+            {/* Ajout du formulaire pour gérer la touche Entrée */}
+            <form onSubmit={handleSearchSubmit} className="relative w-96">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                 <input 
                     type="text" 
@@ -286,7 +300,7 @@ export default function StockApp() {
                         ))}
                     </div>
                 )}
-            </div>
+            </form>
             
             <button 
                 onClick={() => setShowAI(!showAI)}
@@ -343,7 +357,6 @@ export default function StockApp() {
                                         </linearGradient>
                                     </defs>
                                     <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false}/>
-                                    {/* FIX AXE X : minTickGap plus grand pour espacer les dates */}
                                     <XAxis 
                                         dataKey="name" 
                                         tick={{fill:'#64748b', fontSize:11}} 
@@ -367,7 +380,7 @@ export default function StockApp() {
                                         labelStyle={{color: '#94a3b8', marginBottom: '0.5rem'}}
                                         formatter={(v)=>[v.toFixed(2), 'Prix']}
                                         cursor={{ stroke: '#64748b', strokeWidth: 1, strokeDasharray: '4 4' }}
-                                        isAnimationActive={false} // Fix pour le curseur
+                                        isAnimationActive={false} // Fix pour éviter que le curseur saute
                                     />
                                     <Area type="monotone" dataKey="prix" stroke={stockInfo.change>=0?"#4ade80":"#f87171"} strokeWidth={2} fill="url(#colorPrice)" isAnimationActive={false}/>
                                 </AreaChart>
@@ -386,12 +399,16 @@ export default function StockApp() {
                                 <div className="flex justify-between pb-2 border-b border-slate-800"><span className="text-slate-400">Secteur</span> <span className="text-right truncate w-32 text-slate-200">{stockInfo.sector}</span></div>
                             </div>
                             <div className="mt-6">
-                                <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">À propos (Résumé)</h4>
-                                <p className="text-xs text-slate-400 leading-relaxed line-clamp-4 hover:line-clamp-none transition-all cursor-pointer text-justify">
-                                    {/* FIX: Résumé du texte si trop long */}
-                                    {stockInfo.description?.length > 300 
-                                        ? stockInfo.description.substring(0, 300) + "..." 
-                                        : stockInfo.description}
+                                <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">À propos</h4>
+                                {/* DESCRIPTION EXTENSIBLE */}
+                                <p 
+                                    onClick={() => setShowFullDescription(!showFullDescription)}
+                                    className="text-xs text-slate-400 leading-relaxed cursor-pointer hover:text-slate-300 transition-colors text-justify"
+                                >
+                                    {showFullDescription 
+                                        ? stockInfo.description 
+                                        : (stockInfo.description?.length > 300 ? stockInfo.description.substring(0, 300) + "... (Lire la suite)" : stockInfo.description)
+                                    }
                                 </p>
                             </div>
                         </div>
@@ -416,13 +433,14 @@ export default function StockApp() {
                                             </a>
                                         ))}
                                         
-                                        {/* FIX: BOUTON CHARGER PLUS */}
-                                        {visibleNewsCount < news.length && (
+                                        {/* BOUTON CHARGER PLUS / MOINS */}
+                                        {news.length > 4 && (
                                             <button 
-                                                onClick={() => setVisibleNewsCount(prev => prev + 4)}
+                                                onClick={() => setVisibleNewsCount(prev => prev > 4 ? 4 : prev + 4)}
                                                 className="w-full py-3 mt-4 flex items-center justify-center gap-2 text-sm font-medium text-slate-400 hover:text-white bg-slate-900 hover:bg-slate-800 rounded-xl border border-slate-800 transition-colors"
                                             >
-                                                <ChevronDown size={16} /> Charger plus d'actualités
+                                                {visibleNewsCount > 4 ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                                                {visibleNewsCount > 4 ? "Voir moins" : "Charger plus d'actualités"}
                                             </button>
                                         )}
                                     </>
