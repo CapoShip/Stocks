@@ -7,13 +7,10 @@ export async function GET(request) {
   const range = searchParams.get('range') || '1d';
   const interval = searchParams.get('interval') || '15m';
 
-  console.log(`🔍 [API] Demande : ${symbol} | Range: ${range}`);
-
-  if (!symbol) {
-    return NextResponse.json({ error: 'Symbole manquant' }, { status: 400 });
-  }
+  if (!symbol) return NextResponse.json({ error: 'Symbole manquant' }, { status: 400 });
 
   try {
+    // --- INSTANCIATION SÉCURISÉE ---
     let yf = yahooFinance;
     // @ts-ignore
     if (yf.default) yf = yf.default;
@@ -23,19 +20,20 @@ export async function GET(request) {
     }
     if (yf.suppressNotices) yf.suppressNotices(['yahooSurvey']);
 
-    // 1. Infos générales (Prix actuel)
-    const quote = await yf.quote(symbol);
-    const quoteSummary = await yf.quoteSummary(symbol, { modules: ['summaryProfile'] });
+    // 1. Récupération Parallèle (Optimisation Vitesse)
+    // On demande : Le prix, le profil (secteur), les données financières (cible), et les news
+    const [quote, quoteSummary, searchResult] = await Promise.all([
+        yf.quote(symbol),
+        yf.quoteSummary(symbol, { modules: ['summaryProfile', 'financialData', 'defaultKeyStatistics'] }),
+        yf.search(symbol, { newsCount: 8 }) // On demande 8 news récentes
+    ]);
     
-    // 2. Récupération Historique
-    // Pour 1J, on veut les données précises (intraday)
-    // Pour les autres, on veut l'historique
+    // 2. Historique (Chart) avec calcul de date précis
     const today = new Date();
     const period1 = new Date(today);
 
-    // Ajustement des dates pour Yahoo
     switch (range) {
-        case '1d': period1.setDate(today.getDate() - 5); break; // On prend large pour le week-end
+        case '1d': period1.setDate(today.getDate() - 5); break; // Large pour week-end
         case '5d': period1.setDate(today.getDate() - 7); break;
         case '1mo': period1.setMonth(today.getMonth() - 1); break;
         case '6mo': period1.setMonth(today.getMonth() - 6); break;
@@ -52,54 +50,55 @@ export async function GET(request) {
 
     const chartResult = await yf.chart(symbol, queryOptions);
     let historical = (chartResult && chartResult.quotes) ? chartResult.quotes : [];
-
-    // Filtrer les données invalides
     historical = historical.filter(row => row.date && row.close);
 
-    // --- CALCUL MAGIQUE DU POURCENTAGE ---
+    // Calcul Variation Dynamique
     let dynamicChange = 0;
     let dynamicChangePercent = 0;
     const currentPrice = quote.regularMarketPrice;
 
     if (range === '1d' || range === '1J') {
-        // Pour 1 Jour, on utilise la donnée officielle "Variation Journalière"
         dynamicChange = quote.regularMarketChange;
         dynamicChangePercent = quote.regularMarketChangePercent;
-    } else {
-        // Pour les autres périodes, on calcule : Prix Actuel - Prix au début du graphique
-        if (historical.length > 0) {
-            const startPrice = historical[0].close;
-            dynamicChange = currentPrice - startPrice;
-            dynamicChangePercent = (dynamicChange / startPrice) * 100;
-        }
+    } else if (historical.length > 0) {
+        const startPrice = historical[0].close;
+        dynamicChange = currentPrice - startPrice;
+        dynamicChangePercent = (dynamicChange / startPrice) * 100;
     }
-    // -------------------------------------
+
+    // Extraction sécurisée des données
+    const summary = quoteSummary.summaryProfile || {};
+    const finance = quoteSummary.financialData || {};
+    const stats = quoteSummary.defaultKeyStatistics || {};
 
     const result = {
       symbol: quote.symbol,
       name: quote.shortName || quote.longName,
       price: currentPrice,
-      
-      // On envoie nos valeurs calculées dynamiquement
       change: dynamicChange,
       changePercent: dynamicChangePercent,
       
+      // Données fondamentales
       mktCap: quote.marketCap,
-      sector: quoteSummary.summaryProfile?.sector || 'N/A',
-      description: quoteSummary.summaryProfile?.longBusinessSummary || 'Pas de description disponible.',
-      chart: historical.map(row => ({
-          date: row.date, 
-          prix: row.close
-      }))
+      volume: quote.regularMarketVolume,
+      peRatio: quote.trailingPE || null,
+      sector: summary.sector || 'N/A',
+      industry: summary.industry || 'N/A',
+      description: summary.longBusinessSummary || 'Aucune description disponible.',
+      targetPrice: finance.targetMeanPrice || null,
+      recommendation: finance.recommendationKey || 'none', // buy, hold, sell
+      
+      // Actualités (Yahoo Search renvoie un tableau 'news')
+      news: searchResult.news || [],
+      
+      // Graphique
+      chart: historical.map(row => ({ date: row.date, prix: row.close }))
     };
 
     return NextResponse.json(result);
 
   } catch (error) {
-    console.error(`❌ [API] Erreur:`, error.message);
-    return NextResponse.json(
-      { error: "Problème technique : " + error.message },
-      { status: 500 }
-    );
+    console.error(`❌ [API] Erreur ${symbol}:`, error.message);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
