@@ -18,11 +18,11 @@ const TIME_RANGES = {
 };
 
 const MARKET_SECTORS = {
-  'Technologie': ['AAPL', 'MSFT', 'NVDA', 'AMD', 'GOOGL', 'META', 'INTC', 'CRM', 'ADBE'],
-  'Finance': ['JPM', 'BAC', 'V', 'MA', 'GS', 'MS', 'WFC', 'C'],
-  'Automobile': ['TSLA', 'F', 'GM', 'TM', 'RACE', 'HMC', 'STLA'],
-  'Santé': ['JNJ', 'PFE', 'LLY', 'MRK', 'ABBV', 'UNH', 'TMO'],
-  'Crypto': ['BTC-USD', 'ETH-USD', 'SOL-USD', 'DOGE-USD', 'XRP-USD', 'ADA-USD']
+  'Technologie': ['AAPL', 'MSFT', 'NVDA', 'AMD', 'GOOGL', 'META'],
+  'Finance': ['JPM', 'BAC', 'V', 'MA', 'GS'],
+  'Auto': ['TSLA', 'F', 'GM', 'TM', 'RACE'],
+  'Santé': ['JNJ', 'PFE', 'LLY', 'MRK'],
+  'Crypto': ['BTC-USD', 'ETH-USD', 'SOL-USD', 'DOGE-USD']
 };
 
 const formatNumber = (num) => {
@@ -80,12 +80,14 @@ export default function StockApp() {
   const [chartData, setChartData] = useState([]);
   const [news, setNews] = useState([]);
   const [loading, setLoading] = useState(false);
+  
+  // États d'affichage dynamique
   const [visibleNewsCount, setVisibleNewsCount] = useState(4);
-  const [showFullDescription, setShowFullDescription] = useState(false);
+  const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
 
   // Watchlist & Secteurs
-  const [sectorData, setSectorData] = useState([]); // Pour la vue détaillée d'un secteur
-  const [selectedSector, setSelectedSector] = useState(null); // Le secteur cliqué
+  const [sectorData, setSectorData] = useState([]);
+  const [selectedSector, setSelectedSector] = useState(null);
   const [loadingList, setLoadingList] = useState(false);
   const [watchlistData, setWatchlistData] = useState([]);
 
@@ -110,8 +112,9 @@ export default function StockApp() {
   // --- FETCH DASHBOARD ---
   const fetchStockData = async (symbol, rangeKey) => {
     setLoading(true);
-    setVisibleNewsCount(4);
-    setShowFullDescription(false);
+    setVisibleNewsCount(4); // Reset news count
+    setIsDescriptionExpanded(false); // Reset description
+    
     const { range, interval } = TIME_RANGES[rangeKey];
     try {
       const res = await fetch(`/api/stock?symbol=${symbol}&range=${range}&interval=${interval}`);
@@ -123,11 +126,10 @@ export default function StockApp() {
       
       const formattedChart = (data.chart || []).map(item => {
         const d = new Date(item.date);
-        // FIX CURSEUR : On utilise le timestamp comme clé unique
         return { 
-            timestamp: d.getTime(), // Clé unique numérique
+            timestamp: d.getTime(), // Pour l'axe X numérique (fluidité)
             prix: item.prix, 
-            dateObj: d // Pour le formatage
+            dateObj: d 
         };
       });
       setChartData(formattedChart);
@@ -142,7 +144,7 @@ export default function StockApp() {
     if (activeTab === 'dashboard') fetchStockData(selectedStock, activeRange);
   }, [selectedStock, activeRange, activeTab]);
 
-  // --- RECHERCHE ---
+  // --- RECHERCHE FIX ---
   const handleSearchChange = (e) => {
     const val = e.target.value;
     setSearchQuery(val);
@@ -159,6 +161,7 @@ export default function StockApp() {
     }, 300);
   };
 
+  // Correction : La touche Entrée lance la recherche sur le premier résultat ou la saisie
   const handleSearchSubmit = (e) => {
     e.preventDefault();
     if (searchQuery.trim()) {
@@ -182,34 +185,33 @@ export default function StockApp() {
   // --- SECTEURS & WATCHLIST (Multi-fetch) ---
   const fetchMultipleStocks = async (symbols, targetSetter) => {
     setLoadingList(true);
-    const newData = [];
-    // On fetch un par un (simple) ou Promise.all pour la vitesse
     const promises = symbols.map(sym => 
         fetch(`/api/stock?symbol=${sym}&range=1d`).then(r => r.json()).catch(e => null)
     );
-    
     const results = await Promise.all(promises);
     const validResults = results.filter(r => r && !r.error);
     targetSetter(validResults);
     setLoadingList(false);
   };
 
-  // Quand on ouvre le secteur, on charge les données
   useEffect(() => {
       if (activeTab === 'sectors' && selectedSector) {
           fetchMultipleStocks(MARKET_SECTORS[selectedSector], setSectorData);
       }
   }, [selectedSector, activeTab]);
 
-  // Quand on ouvre la watchlist
   useEffect(() => {
       if (activeTab === 'watchlist') {
           fetchMultipleStocks(watchlist, setWatchlistData);
       }
   }, [activeTab, watchlist]);
 
+  // --- ACTIONS DIVERSES ---
+  const toggleWatchlist = (symbol) => {
+      if (watchlist.includes(symbol)) setWatchlist(watchlist.filter(s => s !== symbol));
+      else setWatchlist([...watchlist, symbol]);
+  };
 
-  // --- COMPARE ---
   const fetchCompareData = async () => {
     setLoadingCompare(true);
     const promises = compareList.map(sym => 
@@ -244,9 +246,9 @@ export default function StockApp() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [aiMessages]);
 
-  // FONCTION FORMATAGE AXE X (Pour le graphique)
-  const formatXAxis = (tickItem) => {
-      const date = new Date(tickItem);
+  // FORMATAGE AXE X
+  const formatXAxis = (timestamp) => {
+      const date = new Date(timestamp);
       if (activeRange === '1J') return date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
       if (activeRange === '5J') return date.toLocaleDateString([], {weekday: 'short'});
       return date.toLocaleDateString([], {day: 'numeric', month: 'short'});
@@ -329,10 +331,7 @@ export default function StockApp() {
                             <h1 className="text-3xl font-bold text-white flex items-center gap-3">
                                 {stockInfo.name} <span className="text-xl text-slate-500">({stockInfo.symbol})</span>
                                 <button 
-                                    onClick={() => {
-                                        if (watchlist.includes(stockInfo.symbol)) setWatchlist(watchlist.filter(s => s !== stockInfo.symbol));
-                                        else setWatchlist([...watchlist, stockInfo.symbol]);
-                                    }} 
+                                    onClick={() => toggleWatchlist(stockInfo.symbol)} 
                                     className={`transition-all hover:scale-110 ${watchlist.includes(stockInfo.symbol) ? 'text-yellow-400' : 'text-slate-600 hover:text-yellow-400'}`}
                                 >
                                     <Star fill={watchlist.includes(stockInfo.symbol) ? "currentColor" : "none"} />
@@ -367,11 +366,10 @@ export default function StockApp() {
                                         </linearGradient>
                                     </defs>
                                     <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false}/>
-                                    
-                                    {/* FIX AXE X : Utilisation de Timestamp + Formatter */}
+                                    {/* FIX AXE X : TYPE NUMBER POUR FLUIDITÉ */}
                                     <XAxis 
                                         dataKey="timestamp" 
-                                        type="number"
+                                        type="number" 
                                         domain={['auto', 'auto']}
                                         tickFormatter={formatXAxis}
                                         tick={{fill:'#64748b', fontSize:11}} 
@@ -380,7 +378,6 @@ export default function StockApp() {
                                         tickLine={false} 
                                         dy={10}
                                     />
-                                    
                                     <YAxis 
                                         orientation="right" 
                                         domain={['auto','auto']} 
@@ -393,7 +390,7 @@ export default function StockApp() {
                                     <Tooltip 
                                         contentStyle={{backgroundColor:'#0f172a', borderColor:'#334155', color:'#fff', borderRadius:'8px'}} 
                                         itemStyle={{color: stockInfo.change>=0?"#4ade80":"#f87171"}}
-                                        labelFormatter={(v) => new Date(v).toLocaleString()}
+                                        labelFormatter={(ts) => new Date(ts).toLocaleString()}
                                         formatter={(v)=>[v.toFixed(2), 'Prix']}
                                         cursor={{ stroke: '#64748b', strokeWidth: 1, strokeDasharray: '4 4' }}
                                         isAnimationActive={false} 
@@ -416,15 +413,18 @@ export default function StockApp() {
                             </div>
                             <div className="mt-6">
                                 <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">À propos</h4>
-                                <p 
-                                    onClick={() => setShowFullDescription(!showFullDescription)}
-                                    className="text-xs text-slate-400 leading-relaxed cursor-pointer hover:text-slate-300 transition-colors text-justify"
-                                >
-                                    {showFullDescription 
-                                        ? stockInfo.description 
-                                        : (stockInfo.description?.length > 300 ? stockInfo.description.substring(0, 300) + "... (Lire la suite)" : stockInfo.description)
-                                    }
-                                </p>
+                                {/* TOGGLE DESCRIPTION */}
+                                <div className="text-xs text-slate-400 leading-relaxed text-justify relative">
+                                    <p className={!isDescriptionExpanded ? "line-clamp-4" : ""}>
+                                        {stockInfo.description}
+                                    </p>
+                                    <button 
+                                        onClick={() => setIsDescriptionExpanded(!isDescriptionExpanded)}
+                                        className="text-blue-400 hover:text-blue-300 mt-2 flex items-center gap-1 font-bold"
+                                    >
+                                        {isDescriptionExpanded ? "Réduire" : "Lire la suite"}
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
@@ -448,6 +448,7 @@ export default function StockApp() {
                                             </a>
                                         ))}
                                         
+                                        {/* TOGGLE NEWS */}
                                         {news.length > 4 && (
                                             <button 
                                                 onClick={() => setVisibleNewsCount(prev => prev > 4 ? 4 : prev + 4)}
@@ -494,7 +495,7 @@ export default function StockApp() {
                                         </div>
                                     </div>
                                     <button 
-                                        onClick={(e) => { e.stopPropagation(); setWatchlist(watchlist.filter(s => s !== data.symbol)); }} 
+                                        onClick={(e) => { e.stopPropagation(); toggleWatchlist(data.symbol); }} 
                                         className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 transition-opacity p-2 bg-slate-950 rounded-full shadow-sm"
                                     >
                                         <Trash2 size={16}/>
@@ -516,7 +517,6 @@ export default function StockApp() {
             {/* VUE SECTEURS */}
             {activeTab === 'sectors' && (
                 <div className="max-w-6xl mx-auto animate-in fade-in duration-500">
-                    {/* EN-TÊTE SECTEUR AVEC RETOUR */}
                     {selectedSector ? (
                         <div>
                             <button onClick={() => setSelectedSector(null)} className="flex items-center gap-2 text-slate-400 hover:text-white mb-6 transition-colors">
@@ -546,7 +546,6 @@ export default function StockApp() {
                             )}
                         </div>
                     ) : (
-                        // VUE LISTE DES SECTEURS
                         <>
                             <h2 className="text-2xl font-bold mb-6 flex items-center gap-2"><Layers className="text-blue-500"/> Explorer les Secteurs</h2>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -591,7 +590,7 @@ export default function StockApp() {
                                 <button onClick={() => setCompareList(compareList.filter(s => s !== sym))} className="text-slate-400 hover:text-red-400 transition-colors"><Trash2 size={14}/></button>
                             </div>
                         ))}
-                        <div className="text-sm text-slate-500 flex items-center ml-2 italic">Utilisez la barre de recherche en haut pour ajouter</div>
+                        <div className="text-sm text-slate-500 flex items-center ml-2 italic">Ajoutez via la barre de recherche</div>
                     </div>
 
                     {loadingCompare ? (
