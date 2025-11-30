@@ -1,21 +1,32 @@
 import { google } from '@ai-sdk/google';
 import { streamText } from 'ai';
 
-// ON RETIRE LA LIGNE "EDGE" pour utiliser le mode Node.js (plus stable pour Gemini)
 export const maxDuration = 30;
 
 export async function POST(req) {
   try {
     const { messages, data } = await req.json();
 
+    // 1. On prépare le contexte
     const contextStock = data?.stockInfo 
-      ? `Action: ${data.stockInfo.symbol}. Prix: ${data.stockInfo.price}$. Variation: ${data.stockInfo.changePercent}%.`
-      : "Pas d'action sélectionnée.";
+      ? `CONTEXTE : Action ${data.stockInfo.symbol} à ${data.stockInfo.price}$.`
+      : "Pas d'action spécifique.";
+
+    // 2. On triche un peu : on crée un "faux" message utilisateur
+    // qui contient les instructions. Google comprend ça parfaitement.
+    const initialInstruction = {
+      role: 'user',
+      content: `Tu es un expert en bourse. ${contextStock}. 
+                Réponds en français, sois concis.`
+    };
+
+    // 3. On combine tout ça
+    const finalMessages = [initialInstruction, ...messages];
 
     const result = await streamText({
       model: google('gemini-1.5-flash'),
-      system: `Tu es un expert en bourse. Contexte : ${contextStock}. Réponds en français avec des emojis.`,
-      messages,
+      messages: finalMessages,
+      // ⚠️ ON RETIRE LA LIGNE 'SYSTEM' ICI, C'EST ELLE QUI BLOQUE L'AFFICHAGE
     });
 
     return result.toDataStreamResponse();
