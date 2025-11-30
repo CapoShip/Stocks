@@ -1,23 +1,21 @@
 import { google } from '@ai-sdk/google';
 import { streamText } from 'ai';
 
-// On force l'utilisation de Node.js pour éviter les bugs du mode Edge
-export const runtime = 'nodejs';
+// 🚀 FIX FINAL : On active le mode Edge pour garantir un stream non mis en mémoire tampon
+export const runtime = 'edge'; 
 export const maxDuration = 30;
 
 export async function POST(req) {
+  // ... (tout le reste du code reste le même, y compris la logique d'injection des messages)
   try {
     const { messages, data } = await req.json();
 
-    // 1. Contexte simplifié
     const contextStock = data?.stockInfo 
-      ? `Action: ${data.stockInfo.symbol} (${data.stockInfo.price}$)`
-      : "Pas d'action.";
+      ? `CONTEXTE ACTUEL : Action ${data.stockInfo.symbol} à ${data.stockInfo.price}$.`
+      : "Pas d'action spécifique.";
 
-    // 2. Appel Google avec Paramètres de Sécurité DÉSACTIVÉS (Crucial)
     const result = await streamText({
       model: google('gemini-1.5-flash'),
-      // On désactive TOUS les filtres de sécurité qui bloquent souvent la finance
       settings: {
         safetySettings: [
           { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
@@ -29,7 +27,7 @@ export async function POST(req) {
       messages: [
         {
           role: 'user',
-          content: `Tu es un expert bourse. ${contextStock}. Réponds en français.`
+          content: `Tu es un expert en bourse. ${contextStock}. Réponds en français.`
         },
         ...messages
       ],
@@ -38,12 +36,8 @@ export async function POST(req) {
     return result.toDataStreamResponse();
 
   } catch (error) {
-    console.error("CRASH SERVEUR:", error);
-    
-    // ASTUCE DE DEBUG : On renvoie l'erreur sous forme de texte pour que tu la lises !
-    return new Response(
-      `ERREUR TECHNIQUE DÉTECTÉE : ${error.message || error.toString()}`, 
-      { status: 200 } // On ment en disant que c'est OK pour afficher le texte
-    );
+    console.error("ERREUR:", error);
+    // On retire le code de debug pour revenir à un serveur propre
+    return new Response(JSON.stringify({ error: error.message }), { status: 500 });
   }
 }
