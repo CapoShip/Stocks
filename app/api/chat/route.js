@@ -1,7 +1,6 @@
 import { google } from '@ai-sdk/google';
 import { streamText } from 'ai';
 
-// Autorise le serveur à réfléchir pendant 30 secondes max
 export const maxDuration = 30;
 
 export async function POST(req) {
@@ -13,8 +12,7 @@ export async function POST(req) {
       : "Pas d'action sélectionnée.";
 
     const result = await streamText({
-      // ICI : On utilise "gemini-pro", c'est le modèle le plus compatible
-      model: google('gemini-pro'), 
+      model: google('gemini-1.5-flash'), // Avec la mise à jour, ce modèle va marcher !
       system: `Tu es un assistant boursier expert. 
                Utilise ce contexte pour répondre : ${contextStock}.
                Réponds en français, sois concis et utilise des emojis.`,
