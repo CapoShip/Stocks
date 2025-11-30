@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { useChat } from '@ai-sdk/react'; // Version standard
+import { useChat } from '@ai-sdk/react'; // Version 4
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
 } from 'recharts';
@@ -97,11 +97,12 @@ export default function StockApp() {
   const [compareData, setCompareData] = useState([]);
   const [loadingCompare, setLoadingCompare] = useState(false);
 
-  // --- IA CONFIGURATION (RETOUR AU STANDARD ROBUSTE) ---
+  // --- IA CONFIGURATION (MODE MANUEL FIABLE) ---
   const [showAI, setShowAI] = useState(false);
+  const [userText, setUserText] = useState(''); // Variable que TU contrôles
   const chatEndRef = useRef(null);
   
-  const { messages, input, handleInputChange, handleSubmit, isLoading, error } = useChat({
+  const { messages, append, isLoading, error } = useChat({
     api: '/api/chat',
     body: {
         data: stockInfo ? {
@@ -114,9 +115,24 @@ export default function StockApp() {
             }
         } : {}
     },
-    // On affiche l'erreur dans la console si ça plante
-    onError: (err) => console.error("❌ ERREUR USECHAT:", err)
+    onError: (err) => console.error("Erreur Chat:", err)
   });
+
+  // Fonction d'envoi manuel
+  const handleManualSubmit = async (e) => {
+    e.preventDefault();
+    if (!userText.trim()) return;
+    
+    // On sauvegarde le texte et on vide la boite tout de suite
+    const textToSend = userText;
+    setUserText('');
+    
+    // On force l'envoi à l'IA
+    await append({
+      role: 'user',
+      content: textToSend,
+    });
+  };
 
   useEffect(() => { 
     if (showAI) chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); 
@@ -567,7 +583,7 @@ export default function StockApp() {
             )}
         </main>
 
-        {/* AI PANEL (VERCEL AI SDK V4) */}
+        {/* AI PANEL (MODE HYBRIDE FIABLE) */}
         {showAI && (
             <div className="absolute top-0 right-0 w-full md:w-[400px] h-full bg-slate-900 border-l border-slate-800 shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-300">
                 <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950">
@@ -576,15 +592,14 @@ export default function StockApp() {
                 </div>
                 
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                    {/* Message d'erreur visible si problème */}
+                    {/* Gestion des erreurs */}
                     {error && (
                         <div className="bg-red-500/20 text-red-400 p-3 rounded-lg text-xs border border-red-500/50 mb-4">
-                            ⚠️ Oups, une erreur est survenue avec l'IA. 
-                            <br/>Détail : {error.message}
+                            ⚠️ Erreur : {error.message}
                         </div>
                     )}
 
-                    {messages.length === 0 && !error && (
+                    {messages.length === 0 && (
                         <div className="text-center text-slate-500 mt-10 text-sm">
                             <Bot className="mx-auto mb-3 text-slate-600" size={40}/>
                             <p>Je suis prêt à analyser {stockInfo?.symbol || "le marché"}.</p>
@@ -605,14 +620,15 @@ export default function StockApp() {
                     <div ref={chatEndRef} />
                 </div>
 
-                <form onSubmit={handleSubmit} className="p-4 border-t border-slate-800 bg-slate-950 flex gap-2">
+                {/* Formulaire de chat MANUEL */}
+                <form onSubmit={handleManualSubmit} className="p-4 border-t border-slate-800 bg-slate-950 flex gap-2">
                     <input 
-                        value={input || ''} 
-                        onChange={handleInputChange} 
+                        value={userText} 
+                        onChange={(e) => setUserText(e.target.value)} 
                         placeholder="Posez une question..." 
                         className="flex-1 bg-slate-900 border border-slate-700 rounded-full px-4 py-2 text-sm focus:border-purple-500 outline-none"
                     />
-                    <button type="submit" disabled={isLoading || !(input || '').trim()} className="p-2 bg-purple-600 rounded-full text-white hover:bg-purple-500 transition-colors disabled:opacity-50">
+                    <button type="submit" disabled={isLoading || !userText.trim()} className="p-2 bg-purple-600 rounded-full text-white hover:bg-purple-500 transition-colors disabled:opacity-50">
                         <ArrowRight size={18}/>
                     </button>
                 </form>
