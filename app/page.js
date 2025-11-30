@@ -102,10 +102,10 @@ export default function StockApp() {
   const [userText, setUserText] = useState(''); // Input
   const [messages, setMessages] = useState([]); // Historique
   const [isLoadingAI, setIsLoadingAI] = useState(false); // Loading state
-  const [errorAI, setErrorAI] = useState(null); // 🛑 VARIABLE D'ERREUR 🛑
+  const [errorAI, setErrorAI] = useState(null); // Erreur
   const chatEndRef = useRef(null);
   
-  // Fonction d'envoi manuel (REMPLACE handleSubmit/useChat)
+  // Fonction d'envoi manuel (REMPLACE useChat)
   const handleNonStreamingSubmit = async (e) => {
     e.preventDefault();
     if (!userText.trim() || isLoadingAI) return;
@@ -137,14 +137,14 @@ export default function StockApp() {
             throw new Error(errorData.error || `Erreur Serveur HTTP ${response.status}`);
         }
 
-        const data = await response.json(); // On s'attend à un JSON non-streaming
+        const data = await response.json(); // On s'attend à un JSON non-streaming: {text: ..., id: ...}
         
         // 3. Affiche la réponse de l'IA
         setMessages(prev => [...prev, { id: data.id || 'ai' + Date.now(), role: 'assistant', content: data.text || "La réponse de l'IA est vide." }]);
         
     } catch (err) {
         console.error("Erreur Chat:", err.message);
-        setErrorAI({ message: err.message }); // 🛑 Utilisation de errorAI
+        setErrorAI({ message: err.message });
     } finally {
         setIsLoadingAI(false);
     }
@@ -599,7 +599,7 @@ export default function StockApp() {
             )}
         </main>
 
-        {/* AI PANEL (VERCEL AI SDK V4) */}
+        {/* AI PANEL (MANUEL & NON-STREAMING) */}
         {showAI && (
             <div className="absolute top-0 right-0 w-full md:w-[400px] h-full bg-slate-900 border-l border-slate-800 shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-300">
                 <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950">
@@ -609,9 +609,9 @@ export default function StockApp() {
                 
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
                     {/* Message d'erreur */}
-                    {error && (
+                    {errorAI && (
                         <div className="bg-red-500/20 text-red-400 p-3 rounded-lg text-xs border border-red-500/50 mb-4">
-                            ⚠️ Erreur : {error.message}
+                            ⚠️ Erreur : {errorAI.message}
                         </div>
                     )}
 

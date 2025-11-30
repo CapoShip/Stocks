@@ -1,5 +1,5 @@
 import { google } from '@ai-sdk/google';
-import { generateText, convertToCoreMessages } from 'ai'; // CHANGEMENT CRUCIAL ICI
+import { generateText, convertToCoreMessages } from 'ai'; 
 import { NextResponse } from 'next/server';
 
 export const maxDuration = 30; 
@@ -10,7 +10,6 @@ export async function POST(req) {
 
     const systemInstruction = `Tu es un expert en bourse. CONTEXTE: ${data?.stockInfo ? `Action ${data.stockInfo.symbol} à ${data.stockInfo.price}$.` : "Pas d'action."} Réponds en français.`;
 
-    // Prépare l'historique de conversation (méthode non-streaming)
     const history = convertToCoreMessages(messages);
     const finalMessages = [{ role: 'system', content: systemInstruction }, ...history];
     
