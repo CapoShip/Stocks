@@ -4,8 +4,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
 } from 'recharts';
+// AJOUT DE 'Activity' DANS LES IMPORTS CI-DESSOUS
 import { 
-  TrendingUp, TrendingDown, Search, Plus, Trash2, RefreshCw, Briefcase, Globe, BarChart2, Layers, GitCompare, ExternalLink
+  Activity, TrendingUp, TrendingDown, Search, Plus, Trash2, RefreshCw, Briefcase, Globe, BarChart2, Layers, GitCompare, ExternalLink
 } from 'lucide-react';
 
 // --- CONFIGURATION ---
@@ -73,7 +74,7 @@ export default function StockApp() {
       if (!res.ok) throw new Error(data.error);
 
       setStockInfo(data);
-      setNews(data.news || []); // Stockage des vraies news
+      setNews(data.news || []); 
       
       const formattedChart = (data.chart || []).map(item => {
         const d = new Date(item.date);
@@ -99,7 +100,6 @@ export default function StockApp() {
     const val = e.target.value;
     setSearchQuery(val);
     
-    // Debounce pour ne pas spammer l'API
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
     if (val.length < 2) {
         setSuggestions([]);
@@ -132,7 +132,7 @@ export default function StockApp() {
     const newData = [];
     for (const sym of compareList) {
         try {
-            const res = await fetch(`/api/stock?symbol=${sym}&range=1d&interval=15m`); // On prend juste le snapshot actuel
+            const res = await fetch(`/api/stock?symbol=${sym}&range=1d&interval=15m`); 
             const data = await res.json();
             if (res.ok) newData.push(data);
         } catch (e) { console.error(e); }
@@ -215,8 +215,9 @@ export default function StockApp() {
                     </div>
                 )}
             </div>
+            {/* Bouton Profil simulé (User) */}
             <div className="flex gap-4">
-                <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center"><User size={16}/></div>
+                <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold cursor-pointer">U</div>
             </div>
         </header>
 
