@@ -10,8 +10,8 @@
   },
   "dependencies": {
     "@ai-sdk/groq": "^2.0.32",
-    "@ai-sdk/react": "^1.0.0",
-    "ai": "^4.0.0",
+    "@ai-sdk/react": "^2.0.104",
+    "ai": "^5.0.104",
     "autoprefixer": "^10.4.19",
     "lucide-react": "^0.378.0",
     "next": "14.2.3",

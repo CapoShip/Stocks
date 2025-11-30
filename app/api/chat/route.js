@@ -13,14 +13,16 @@ export async function POST(req) {
   try {
     const { messages, data } = await req.json();
 
-    const systemInstruction = `Tu es un expert en bourse. CONTEXTE: ${data?.stockInfo ? `Action ${data.stockInfo.symbol} à ${data.stockInfo.price}$.` : "Pas d'action."} Réponds en français.`;
+    const contextStock = data?.stockInfo ? `Action ${data.stockInfo.symbol} à ${data.stockInfo.price}$.` : "Pas d'action.";
+
+    const systemInstruction = `Tu es un expert en bourse. CONTEXTE: ${contextStock} Réponds en français.`;
 
     const history = convertToCoreMessages(messages);
     const finalMessages = [{ role: 'system', content: systemInstruction }, ...history];
     
-    // FIX FINAL : Utilisation du modèle V1 compatible (Llama 2)
+    // ✅ Le modèle V5 que nous voulons
     const response = await generateText({
-      model: groq('llama2-70b-4096'), // 👈 LE MODÈLE COMPATIBLE V4
+      model: groq('llama3-8b-8192'), 
       messages: finalMessages,
     });
 
