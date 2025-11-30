@@ -20,7 +20,7 @@ export async function POST(req) {
     
     // FIX FINAL : Utilisation de Llama 2 (compatible V4)
     const response = await generateText({
-      model: groq('llama2-70b-4096'), // 👈 Changement pour un modèle compatible V4
+      model: groq('llama2-70b-4096'), // 👈 DOIT ÊTRE LA LIGNE LLA MA 2
       messages: finalMessages,
     });
 
