@@ -12,8 +12,7 @@ export async function POST(req) {
       : "Pas d'action sélectionnée.";
 
     const result = await streamText({
-      // ON UTILISE LE MODÈLE CLASSIQUE (Le plus compatible)
-      model: google('gemini-pro'),
+      model: google('gemini-1.5-flash'), // Ça marche avec le SDK @latest !
       system: `Tu es un assistant boursier. Contexte : ${contextStock}`,
       messages,
     });
@@ -22,7 +21,6 @@ export async function POST(req) {
 
   } catch (error) {
     console.error("ERREUR CHAT:", error);
-    // On renvoie une erreur propre
-    return new Response(JSON.stringify({ error: "Erreur IA: " + error.message }), { status: 500 });
+    return new Response(JSON.stringify({ error: error.message }), { status: 500 });
   }
 }
