@@ -5,13 +5,13 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
 } from 'recharts';
 import { 
-  Activity, Search, Plus, Trash2, RefreshCw, Briefcase, Globe, BarChart2, Layers, GitCompare, ExternalLink, MessageSquare, X, Send, Bot, Sparkles, ArrowRight, Star, TrendingUp, TrendingDown, ChevronDown, ChevronUp, ArrowLeft
+  Activity, Search, Trash2, RefreshCw, Briefcase, Globe, BarChart2, Layers, GitCompare, ExternalLink, Bot, Sparkles, ArrowRight, Star, TrendingUp, TrendingDown, ChevronDown, ChevronUp, ArrowLeft, X
 } from 'lucide-react';
 
 // --- CONFIGURATION ---
 const TIME_RANGES = {
   '1J': { label: '1J', range: '1d', interval: '5m' },
-  '5J': { label: '5J', range: '5d', interval: '15m' },
+  '1S': { label: '1S', range: '1wk', interval: '30m' },
   '1M': { label: '1M', range: '1mo', interval: '1d' },
   '6M': { label: '6M', range: '6mo', interval: '1d' },
   '1A': { label: '1A', range: '1y', interval: '1wk' },
@@ -36,7 +36,8 @@ const formatNumber = (num) => {
 
 const formatSigned = (num) => {
     if (num === undefined || num === null) return '0.00';
-    return (num > 0 ? '+' : '') + num.toFixed(2);
+    const n = parseFloat(num);
+    return (n > 0 ? '+' : '') + n.toFixed(2);
 };
 
 const timeAgo = (timestamp) => {
@@ -82,6 +83,7 @@ export default function StockApp() {
   const [selectedSector, setSelectedSector] = useState(null);
   const [loadingList, setLoadingList] = useState(false);
   const [watchlistData, setWatchlistData] = useState([]);
+  const [loadingWatchlist, setLoadingWatchlist] = useState(false);
 
   // Recherche
   const [searchQuery, setSearchQuery] = useState('');
@@ -105,7 +107,10 @@ export default function StockApp() {
     setLoading(true);
     setVisibleNewsCount(4);
     setShowFullDescription(false);
-    const { range, interval } = TIME_RANGES[rangeKey];
+    
+    const rangeConfig = TIME_RANGES[rangeKey] || TIME_RANGES['1M'];
+    const { range, interval } = rangeConfig;
+
     try {
       const res = await fetch(`/api/stock?symbol=${symbol}&range=${range}&interval=${interval}`);
       const data = await res.json();
@@ -114,13 +119,12 @@ export default function StockApp() {
       setStockInfo(data);
       setNews(data.news || []); 
       
-      // On s'assure que chart est bien un tableau
       const rawChart = Array.isArray(data.chart) ? data.chart : [];
       
       const formattedChart = rawChart.map(item => {
         return { 
             timestamp: item.timestamp, 
-            prix: item.prix, 
+            prix: parseFloat(item.prix.toFixed(2)), 
         };
       });
       setChartData(formattedChart);
@@ -186,19 +190,16 @@ export default function StockApp() {
         return;
     }
     setLoadingList(true);
-    // Promise.allSettled évite le crash si un stock échoue
     const promises = symbols.map(sym => 
         fetch(`/api/stock?symbol=${sym}&range=1d`).then(r => r.json()).catch(e => null)
     );
     
     const results = await Promise.all(promises);
-    // On filtre les nuls et les erreurs
     const validResults = results.filter(r => r && !r.error && r.price);
     targetSetter(validResults);
     setLoadingList(false);
   };
 
-  // Watchlist loader sécurisé
   const fetchWatchlistData = async () => {
     setLoadingWatchlist(true);
     if (!watchlist || watchlist.length === 0) {
@@ -255,7 +256,7 @@ export default function StockApp() {
   const formatXAxis = (timestamp) => {
       const date = new Date(timestamp);
       if (activeRange === '1J') return date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-      if (activeRange === '5J') return date.toLocaleDateString([], {weekday: 'short'});
+      if (activeRange === '1S' || activeRange === '5J') return date.toLocaleDateString([], {weekday: 'short'});
       return date.toLocaleDateString([], {day: 'numeric', month: 'short'});
   };
 
@@ -349,19 +350,18 @@ export default function StockApp() {
                                 <AreaChart data={chartData} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
                                     <defs>
                                         <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor={stockInfo.change>=0?"#4ade80":"#f87171"} stopOpacity={0.3}/>
+                                            <stop offset="5%" stopColor={stockInfo.change>=0?"#4ade80":"#f87171"} stopOpacity={0.4}/>
                                             <stop offset="95%" stopColor={stockInfo.change>=0?"#4ade80":"#f87171"} stopOpacity={0}/>
                                         </linearGradient>
                                     </defs>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false}/>
-                                    {/* FIX AXE X : Utilisation de dataMin/dataMax pour zoomer uniquement sur les données existantes */}
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} opacity={0.4}/>
                                     <XAxis 
                                         dataKey="timestamp" 
-                                        type="number" 
-                                        domain={['dataMin', 'dataMax']} // ASTUCE CRITIQUE POUR LA FLUIDITÉ
+                                        // ICI LE CHANGEMENT : On retire le type "number" et le domain
+                                        // Cela force l'équidistance entre les points
                                         tickFormatter={formatXAxis}
                                         tick={{fill:'#64748b', fontSize:11}} 
-                                        minTickGap={50} 
+                                        minTickGap={60} // Augmenté pour éviter chevauchement
                                         axisLine={false} 
                                         tickLine={false} 
                                         dy={10}
@@ -383,7 +383,15 @@ export default function StockApp() {
                                         cursor={{ stroke: '#64748b', strokeWidth: 1, strokeDasharray: '4 4' }}
                                         isAnimationActive={false} 
                                     />
-                                    <Area type="monotone" dataKey="prix" stroke={stockInfo.change>=0?"#4ade80":"#f87171"} strokeWidth={2} fill="url(#colorPrice)" isAnimationActive={false}/>
+                                    <Area 
+                                        type="monotone" // Courbe lissée
+                                        dataKey="prix" 
+                                        stroke={stockInfo.change>=0?"#4ade80":"#f87171"} 
+                                        strokeWidth={2} 
+                                        fill="url(#colorPrice)" 
+                                        isAnimationActive={true}
+                                        connectNulls={true} // Ignore les trous (nulls)
+                                    />
                                 </AreaChart>
                             </ResponsiveContainer>
                         )}
