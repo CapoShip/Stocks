@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+// IMPORT CRITIQUE : On utilise la nouvelle librairie installée
 import { useChat } from '@ai-sdk/react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
@@ -97,26 +98,30 @@ export default function StockApp() {
   const [compareData, setCompareData] = useState([]);
   const [loadingCompare, setLoadingCompare] = useState(false);
 
-  // --- IA CONFIGURATION (Vercel AI SDK) ---
+  // --- IA CONFIGURATION (CORRECTIF V4) ---
   const [showAI, setShowAI] = useState(false);
   const chatEndRef = useRef(null);
   
-  // Utilisation du Hook useChat pour gérer l'IA
   const { messages, input, handleInputChange, handleSubmit, isLoading } = useChat({
     api: '/api/chat',
-    // On passe les données de l'action actuelle à l'API via le body
+    // Protection contre les erreurs si stockInfo est null au chargement
     body: {
-        stockInfo: stockInfo ? {
-            symbol: stockInfo.symbol,
-            name: stockInfo.name,
-            price: stockInfo.price,
-            changePercent: stockInfo.changePercent,
-            sector: stockInfo.sector
-        } : null
+        data: stockInfo ? {
+            stockInfo: {
+                symbol: stockInfo.symbol,
+                name: stockInfo.name,
+                price: stockInfo.price,
+                changePercent: stockInfo.changePercent,
+                sector: stockInfo.sector
+            }
+        } : {}
+    },
+    onError: (err) => {
+        console.error("Erreur Client Chat:", err);
     }
   });
 
-  // Scroll automatique quand l'IA répond
+  // Scroll automatique
   useEffect(() => { 
     if (showAI) chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); 
   }, [messages, showAI]);
@@ -566,7 +571,7 @@ export default function StockApp() {
             )}
         </main>
 
-        {/* AI PANEL (VERCEL AI SDK) */}
+        {/* AI PANEL (VERCEL AI SDK V4) */}
         {showAI && (
             <div className="absolute top-0 right-0 w-full md:w-[400px] h-full bg-slate-900 border-l border-slate-800 shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-300">
                 <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950">
@@ -580,12 +585,12 @@ export default function StockApp() {
                         <div className="text-center text-slate-500 mt-10 text-sm">
                             <Bot className="mx-auto mb-3 text-slate-600" size={40}/>
                             <p>Je suis prêt à analyser {stockInfo?.symbol || "le marché"}.</p>
-                            <p>Pose-moi une question sur les tendances ou les résultats !</p>
+                            <p>Pose-moi une question !</p>
                         </div>
                     )}
                     
-                    {/* Liste des messages */}
-                    {messages.map((m) => (
+                    {/* Liste des messages avec protection anti-crash */}
+                    {(messages || []).map((m) => (
                         <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                             <div className={`max-w-[85%] p-3 rounded-2xl text-sm whitespace-pre-line ${m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-200'}`}>
                                 {m.role === 'assistant' && <span className="font-bold text-purple-400 block mb-1 text-xs">IA</span>}
