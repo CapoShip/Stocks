@@ -9,8 +9,9 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "ai": "^3.1.14",
     "@ai-sdk/openai": "^0.0.14",
+    "ai": "^3.1.14",
+    "autoprefixer": "^10.4.22",
     "lucide-react": "^0.378.0",
     "next": "14.2.3",
     "react": "^18",
