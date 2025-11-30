@@ -4,9 +4,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
 } from 'recharts';
-// AJOUT DE 'Activity' DANS LES IMPORTS CI-DESSOUS
 import { 
-  Activity, TrendingUp, TrendingDown, Search, Plus, Trash2, RefreshCw, Briefcase, Globe, BarChart2, Layers, GitCompare, ExternalLink
+  Activity, TrendingUp, TrendingDown, Search, Plus, Trash2, RefreshCw, Briefcase, Globe, BarChart2, Layers, GitCompare, ExternalLink, MessageSquare, X, Send
 } from 'lucide-react';
 
 // --- CONFIGURATION ---
@@ -18,7 +17,6 @@ const TIME_RANGES = {
   '1A': { label: '1A', range: '1y', interval: '1wk' },
 };
 
-// Données statiques pour la page "Secteurs"
 const MARKET_SECTORS = {
   'Technologie': ['AAPL', 'MSFT', 'NVDA', 'AMD', 'GOOGL', 'META'],
   'Finance': ['JPM', 'BAC', 'V', 'MA', 'GS'],
@@ -42,29 +40,29 @@ const formatSigned = (num) => {
 };
 
 export default function StockApp() {
-  const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, sectors, compare
+  const [activeTab, setActiveTab] = useState('dashboard');
   const [selectedStock, setSelectedStock] = useState('NVDA'); 
   const [watchlist, setWatchlist] = useState(['AAPL', 'NVDA', 'TSLA', 'AMZN']);
   
-  // --- ÉTATS DASHBOARD ---
+  // États Dashboard
   const [activeRange, setActiveRange] = useState('1M');
   const [stockInfo, setStockInfo] = useState(null);
   const [chartData, setChartData] = useState([]);
   const [news, setNews] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // --- ÉTATS RECHERCHE ---
+  // États Recherche
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const searchTimeout = useRef(null);
 
-  // --- ÉTATS COMPARATEUR ---
-  const [compareList, setCompareList] = useState(['AAPL', 'MSFT']);
-  const [compareData, setCompareData] = useState([]);
-  const [loadingCompare, setLoadingCompare] = useState(false);
+  // États Assistant IA
+  const [showAI, setShowAI] = useState(false);
+  const [aiMessages, setAiMessages] = useState([{ role: 'ai', text: 'Bonjour ! Je suis votre assistant financier. Posez-moi une question sur le marché.' }]);
+  const [aiInput, setAiInput] = useState('');
 
-  // 1. CHARGEMENT DASHBOARD
+  // 1. CHARGEMENT DONNÉES
   const fetchStockData = async (symbol, rangeKey) => {
     setLoading(true);
     const { range, interval } = TIME_RANGES[rangeKey];
@@ -95,16 +93,12 @@ export default function StockApp() {
     if (activeTab === 'dashboard') fetchStockData(selectedStock, activeRange);
   }, [selectedStock, activeRange, activeTab]);
 
-  // 2. GESTION RECHERCHE AVEC SUGGESTIONS
+  // 2. RECHERCHE INTELLIGENTE
   const handleSearchChange = (e) => {
     const val = e.target.value;
     setSearchQuery(val);
-    
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
-    if (val.length < 2) {
-        setSuggestions([]);
-        return;
-    }
+    if (val.length < 2) { setSuggestions([]); return; }
 
     searchTimeout.current = setTimeout(async () => {
         const res = await fetch(`/api/search?q=${val}`);
@@ -115,43 +109,38 @@ export default function StockApp() {
   };
 
   const selectSuggestion = (symbol) => {
-    if (activeTab === 'compare') {
-        if (!compareList.includes(symbol)) setCompareList([...compareList, symbol]);
-    } else {
-        setSelectedStock(symbol);
-        setActiveTab('dashboard');
-    }
+    setSelectedStock(symbol);
+    setActiveTab('dashboard');
     setSearchQuery('');
     setSuggestions([]);
     setShowSuggestions(false);
   };
 
-  // 3. CHARGEMENT COMPARATEUR
-  const fetchCompareData = async () => {
-    setLoadingCompare(true);
-    const newData = [];
-    for (const sym of compareList) {
-        try {
-            const res = await fetch(`/api/stock?symbol=${sym}&range=1d&interval=15m`); 
-            const data = await res.json();
-            if (res.ok) newData.push(data);
-        } catch (e) { console.error(e); }
-    }
-    setCompareData(newData);
-    setLoadingCompare(false);
+  // 3. ASSISTANT IA (Simulation)
+  const handleAiSend = (e) => {
+    e.preventDefault();
+    if (!aiInput.trim()) return;
+    
+    // Ajout message utilisateur
+    const userMsg = { role: 'user', text: aiInput };
+    setAiMessages(prev => [...prev, userMsg]);
+    setAiInput('');
+
+    // Réponse simulée (Pour une vraie IA, il faudrait connecter OpenAI ici)
+    setTimeout(() => {
+        let responseText = "Je peux vous aider à analyser ce titre. Regardez le ratio P/E et les volumes récents.";
+        if (aiInput.toLowerCase().includes('acheter')) responseText = "Je ne peux pas donner de conseil financier direct, mais la tendance actuelle semble " + (stockInfo?.change >= 0 ? "positive." : "négative.");
+        if (aiInput.toLowerCase().includes('analyse')) responseText = `L'action ${selectedStock} est dans le secteur ${stockInfo?.sector}. Sa capitalisation est de ${formatNumber(stockInfo?.mktCap)}.`;
+        
+        setAiMessages(prev => [...prev, { role: 'ai', text: responseText }]);
+    }, 1000);
   };
 
-  useEffect(() => {
-    if (activeTab === 'compare') fetchCompareData();
-  }, [activeTab, compareList]);
-
-
-  // --- RENDER ---
   return (
     <div className="flex h-screen bg-slate-950 text-slate-100 font-sans overflow-hidden">
       
-      {/* Sidebar Navigation */}
-      <div className="w-16 md:w-64 bg-slate-900 border-r border-slate-800 flex flex-col">
+      {/* Sidebar */}
+      <div className="w-16 md:w-64 bg-slate-900 border-r border-slate-800 flex flex-col z-30">
         <div className="p-6 text-xl font-bold text-blue-400 flex items-center gap-2">
             <Activity /> <span className="hidden md:block">AlphaTrade</span>
         </div>
@@ -163,12 +152,8 @@ export default function StockApp() {
             <button onClick={() => setActiveTab('sectors')} className={`w-full flex items-center gap-3 p-3 rounded-xl transition-colors ${activeTab==='sectors' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>
                 <Layers size={20} /> <span className="hidden md:block">Marché</span>
             </button>
-            <button onClick={() => setActiveTab('compare')} className={`w-full flex items-center gap-3 p-3 rounded-xl transition-colors ${activeTab==='compare' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>
-                <GitCompare size={20} /> <span className="hidden md:block">Comparateur</span>
-            </button>
         </nav>
 
-        {/* Watchlist Sidebar (Visible seulement en Dashboard) */}
         {activeTab === 'dashboard' && (
             <div className="p-4 hidden md:block border-t border-slate-800">
                 <h3 className="text-xs font-bold text-slate-500 uppercase mb-3">Watchlist</h3>
@@ -184,30 +169,29 @@ export default function StockApp() {
         )}
       </div>
 
-      {/* Main Area */}
+      {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden relative">
         
-        {/* Top Bar avec Recherche Intelligente */}
+        {/* Header */}
         <header className="h-16 border-b border-slate-800 flex items-center justify-between px-6 bg-slate-950/80 backdrop-blur z-20">
             <div className="relative w-96">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                 <input 
                     type="text" 
                     className="w-full bg-slate-900 border border-slate-700 rounded-full pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-blue-500"
-                    placeholder={activeTab === 'compare' ? "Ajouter au comparateur..." : "Rechercher une action..."}
+                    placeholder="Rechercher une action (ex: Tesla)..."
                     value={searchQuery}
                     onChange={handleSearchChange}
                     onFocus={() => setShowSuggestions(true)}
                     onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                 />
-                {/* Dropdown Suggestions */}
                 {showSuggestions && suggestions.length > 0 && (
                     <div className="absolute top-12 left-0 w-full bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden z-50">
                         {suggestions.map((s) => (
                             <div key={s.symbol} onClick={() => selectSuggestion(s.symbol)} className="p-3 hover:bg-slate-800 cursor-pointer border-b border-slate-800 last:border-0">
                                 <div className="flex justify-between">
                                     <span className="font-bold text-white">{s.symbol}</span>
-                                    <span className="text-xs text-slate-500">{s.exchange}</span>
+                                    <span className="text-xs text-slate-500">{s.exch}</span>
                                 </div>
                                 <div className="text-xs text-slate-400 truncate">{s.name}</div>
                             </div>
@@ -215,19 +199,22 @@ export default function StockApp() {
                     </div>
                 )}
             </div>
-            {/* Bouton Profil simulé (User) */}
-            <div className="flex gap-4">
-                <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold cursor-pointer">U</div>
-            </div>
+            
+            <button 
+                onClick={() => setShowAI(!showAI)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-full border transition-colors ${showAI ? 'bg-purple-600 border-purple-600 text-white' : 'border-slate-700 text-slate-400 hover:text-white'}`}
+            >
+                <MessageSquare size={18} /> <span>Assistant IA</span>
+            </button>
         </header>
 
-        {/* Content Scrollable */}
-        <main className="flex-1 overflow-y-auto p-6 bg-slate-950">
+        {/* Scrollable Area */}
+        <main className="flex-1 overflow-y-auto p-6 bg-slate-950 relative">
             
-            {/* VUE DASHBOARD */}
             {activeTab === 'dashboard' && stockInfo && (
-                <div className="space-y-6 max-w-7xl mx-auto">
-                    {/* Header Stock */}
+                <div className="space-y-6 max-w-7xl mx-auto pb-20">
+                    
+                    {/* En-tête Stock */}
                     <div className="flex flex-col md:flex-row justify-between items-end gap-4">
                         <div>
                             <h1 className="text-3xl font-bold text-white flex items-center gap-2">
@@ -249,54 +236,66 @@ export default function StockApp() {
                         </div>
                     </div>
 
-                    {/* Chart & Stats */}
+                    {/* GRAPHIQUE */}
+                    <div className="bg-slate-900 rounded-2xl p-6 border border-slate-800 shadow-xl min-h-[400px]">
+                        {loading ? (
+                            <div className="h-full flex items-center justify-center text-slate-500 animate-pulse">Chargement...</div>
+                        ) : (
+                            <ResponsiveContainer width="100%" height={350}>
+                                <AreaChart data={chartData}>
+                                    <defs>
+                                        <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor={stockInfo.change>=0?"#4ade80":"#f87171"} stopOpacity={0.3}/>
+                                            <stop offset="95%" stopColor={stockInfo.change>=0?"#4ade80":"#f87171"} stopOpacity={0}/>
+                                        </linearGradient>
+                                    </defs>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false}/>
+                                    <XAxis dataKey="name" tick={{fill:'#64748b', fontSize:12}} minTickGap={30}/>
+                                    <YAxis orientation="right" domain={['auto','auto']} tick={{fill:'#64748b', fontSize:12}} tickFormatter={(v)=>v.toFixed(2)}/>
+                                    <Tooltip contentStyle={{backgroundColor:'#0f172a', borderColor:'#334155', color:'#fff'}} formatter={(v)=>[v.toFixed(2), 'Prix']}/>
+                                    <Area type="monotone" dataKey="prix" stroke={stockInfo.change>=0?"#4ade80":"#f87171"} strokeWidth={2} fill="url(#colorPrice)"/>
+                                </AreaChart>
+                            </ResponsiveContainer>
+                        )}
+                    </div>
+
+                    {/* DÉTAILS COMPLETS & NEWS */}
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        <div className="lg:col-span-2 bg-slate-900 rounded-2xl p-6 border border-slate-800 shadow-xl min-h-[400px]">
-                            {loading ? (
-                                <div className="h-full flex items-center justify-center text-slate-500 animate-pulse">Chargement...</div>
-                            ) : (
-                                <ResponsiveContainer width="100%" height={350}>
-                                    <AreaChart data={chartData}>
-                                        <defs>
-                                            <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
-                                                <stop offset="5%" stopColor={stockInfo.change>=0?"#4ade80":"#f87171"} stopOpacity={0.3}/>
-                                                <stop offset="95%" stopColor={stockInfo.change>=0?"#4ade80":"#f87171"} stopOpacity={0}/>
-                                            </linearGradient>
-                                        </defs>
-                                        <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false}/>
-                                        <XAxis dataKey="name" tick={{fill:'#64748b', fontSize:12}} minTickGap={30}/>
-                                        <YAxis orientation="right" domain={['auto','auto']} tick={{fill:'#64748b', fontSize:12}} tickFormatter={(v)=>v.toFixed(2)}/>
-                                        <Tooltip contentStyle={{backgroundColor:'#0f172a', borderColor:'#334155', color:'#fff'}} formatter={(v)=>[v.toFixed(2), 'Prix']}/>
-                                        <Area type="monotone" dataKey="prix" stroke={stockInfo.change>=0?"#4ade80":"#f87171"} strokeWidth={2} fill="url(#colorPrice)"/>
-                                    </AreaChart>
-                                </ResponsiveContainer>
-                            )}
+                        
+                        {/* Carte Infos Détaillées */}
+                        <div className="bg-slate-900 rounded-2xl p-6 border border-slate-800">
+                            <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Briefcase size={18} className="text-blue-400"/> Fondamentaux</h3>
+                            <div className="space-y-3 text-sm">
+                                <div className="flex justify-between py-2 border-b border-slate-800"><span className="text-slate-400">Cap. Boursière</span> <span>{formatNumber(stockInfo.mktCap)}</span></div>
+                                <div className="flex justify-between py-2 border-b border-slate-800"><span className="text-slate-400">P/E Ratio</span> <span>{stockInfo.peRatio?.toFixed(2) || '-'}</span></div>
+                                <div className="flex justify-between py-2 border-b border-slate-800"><span className="text-slate-400">Prix Cible (1A)</span> <span className="text-green-400">{stockInfo.targetPrice ? '$'+stockInfo.targetPrice : '-'}</span></div>
+                                <div className="flex justify-between py-2 border-b border-slate-800"><span className="text-slate-400">Volume</span> <span>{formatNumber(stockInfo.volume)}</span></div>
+                                <div className="flex justify-between py-2 border-b border-slate-800"><span className="text-slate-400">Secteur</span> <span className="text-right truncate w-32">{stockInfo.sector}</span></div>
+                            </div>
+                            <div className="mt-4 pt-4">
+                                <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">Description</h4>
+                                <p className="text-xs text-slate-400 leading-relaxed line-clamp-4 hover:line-clamp-none transition-all cursor-pointer">
+                                    {stockInfo.description}
+                                </p>
+                            </div>
                         </div>
 
-                        {/* Info & News */}
-                        <div className="flex flex-col gap-6">
-                            <div className="bg-slate-900 rounded-2xl p-6 border border-slate-800">
-                                <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Briefcase size={18} className="text-blue-400"/> Fondamentaux</h3>
-                                <div className="space-y-3 text-sm">
-                                    <div className="flex justify-between py-2 border-b border-slate-800"><span className="text-slate-400">Cap. Boursière</span> <span>{formatNumber(stockInfo.mktCap)}</span></div>
-                                    <div className="flex justify-between py-2 border-b border-slate-800"><span className="text-slate-400">P/E Ratio</span> <span>{stockInfo.peRatio?.toFixed(2) || '-'}</span></div>
-                                    <div className="flex justify-between py-2 border-b border-slate-800"><span className="text-slate-400">Secteur</span> <span>{stockInfo.sector}</span></div>
-                                </div>
-                            </div>
-
-                            <div className="bg-slate-900 rounded-2xl p-6 border border-slate-800 flex-1 overflow-hidden">
-                                <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Globe size={18} className="text-blue-400"/> Actualités</h3>
-                                <div className="space-y-4 overflow-y-auto max-h-[300px] pr-2">
-                                    {news.length > 0 ? news.map((n) => (
-                                        <a key={n.uuid} href={n.link} target="_blank" rel="noreferrer" className="block group">
-                                            <h4 className="text-sm font-medium text-slate-200 group-hover:text-blue-400 transition-colors line-clamp-2">{n.title}</h4>
-                                            <div className="flex justify-between mt-1 text-xs text-slate-500">
-                                                <span>{n.publisher}</span>
-                                                <span>{new Date(n.providerPublishTime * 1000).toLocaleDateString()}</span>
-                                            </div>
-                                        </a>
-                                    )) : <p className="text-slate-500 text-sm">Aucune actualité récente.</p>}
-                                </div>
+                        {/* Carte Vraies Actualités */}
+                        <div className="lg:col-span-2 bg-slate-900 rounded-2xl p-6 border border-slate-800">
+                            <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Globe size={18} className="text-blue-400"/> Actualités en direct</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {news.length > 0 ? news.map((n) => (
+                                    <a key={n.uuid} href={n.link} target="_blank" rel="noreferrer" className="block bg-slate-950 p-4 rounded-xl border border-slate-800 hover:border-blue-500 transition-all group">
+                                        <div className="flex justify-between items-start mb-2">
+                                            <span className="text-xs font-bold text-blue-400">{n.publisher}</span>
+                                            <ExternalLink size={12} className="text-slate-600 group-hover:text-blue-400"/>
+                                        </div>
+                                        <h4 className="text-sm font-medium text-slate-200 mb-2 line-clamp-2">{n.title}</h4>
+                                        <p className="text-xs text-slate-500">{new Date(n.providerPublishTime * 1000).toLocaleString()}</p>
+                                    </a>
+                                )) : (
+                                    <div className="col-span-2 text-center py-10 text-slate-500">Aucune actualité récente trouvée pour ce titre.</div>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -306,7 +305,7 @@ export default function StockApp() {
             {/* VUE SECTEURS */}
             {activeTab === 'sectors' && (
                 <div className="max-w-6xl mx-auto">
-                    <h2 className="text-2xl font-bold mb-6">Explorer le Marché</h2>
+                    <h2 className="text-2xl font-bold mb-6">Explorer par Secteur</h2>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {Object.entries(MARKET_SECTORS).map(([sector, stocks]) => (
                             <div key={sector} className="bg-slate-900 border border-slate-800 rounded-2xl p-6 hover:border-blue-500/50 transition-all">
@@ -328,63 +327,37 @@ export default function StockApp() {
                 </div>
             )}
 
-            {/* VUE COMPARATEUR */}
-            {activeTab === 'compare' && (
-                <div className="max-w-6xl mx-auto">
-                    <div className="flex justify-between items-center mb-6">
-                        <h2 className="text-2xl font-bold">Comparateur d'Actions</h2>
-                        <button onClick={fetchCompareData} className="p-2 bg-blue-600 rounded-lg hover:bg-blue-500"><RefreshCw size={20}/></button>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2 mb-6">
-                        {compareList.map(sym => (
-                            <div key={sym} className="flex items-center gap-2 bg-slate-800 px-3 py-1 rounded-lg">
-                                {sym}
-                                <button onClick={() => setCompareList(compareList.filter(s => s !== sym))} className="text-slate-400 hover:text-red-400"><Trash2 size={14}/></button>
-                            </div>
-                        ))}
-                        <div className="text-sm text-slate-500 flex items-center ml-2">Use search bar to add</div>
-                    </div>
-
-                    {loadingCompare ? (
-                        <div className="text-center py-20 text-slate-500">Chargement des données comparatives...</div>
-                    ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {compareData.map(data => (
-                                <div key={data.symbol} className="bg-slate-900 border border-slate-800 rounded-2xl p-6 relative overflow-hidden">
-                                    <div className="flex justify-between items-start mb-4">
-                                        <div>
-                                            <h3 className="text-2xl font-bold">{data.symbol}</h3>
-                                            <div className="text-sm text-slate-400 truncate w-48">{data.name}</div>
-                                        </div>
-                                        <div className={`text-right ${data.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                            <div className="text-2xl font-bold">${data.price?.toFixed(2)}</div>
-                                            <div className="text-sm">{formatSigned(data.changePercent)}%</div>
-                                        </div>
-                                    </div>
-                                    
-                                    <div className="space-y-2 text-sm">
-                                        <div className="flex justify-between py-1 border-b border-slate-800">
-                                            <span className="text-slate-500">Cap. Boursière</span>
-                                            <span>{formatNumber(data.mktCap)}</span>
-                                        </div>
-                                        <div className="flex justify-between py-1 border-b border-slate-800">
-                                            <span className="text-slate-500">P/E Ratio</span>
-                                            <span>{data.peRatio?.toFixed(2) || '-'}</span>
-                                        </div>
-                                        <div className="flex justify-between py-1 border-b border-slate-800">
-                                            <span className="text-slate-500">Secteur</span>
-                                            <span className="truncate w-32 text-right">{data.sector}</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            )}
-
         </main>
+
+        {/* PANNEAU ASSISTANT IA (Overlay) */}
+        {showAI && (
+            <div className="absolute top-0 right-0 w-full md:w-96 h-full bg-slate-900 border-l border-slate-800 shadow-2xl z-40 flex flex-col animate-in slide-in-from-right duration-300">
+                <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950">
+                    <h3 className="font-bold text-lg flex items-center gap-2 text-purple-400"><MessageSquare size={20}/> Assistant IA</h3>
+                    <button onClick={() => setShowAI(false)} className="hover:text-white text-slate-500"><X size={20}/></button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                    {aiMessages.map((msg, idx) => (
+                        <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                            <div className={`max-w-[80%] p-3 rounded-2xl text-sm ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-200'}`}>
+                                {msg.text}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+                <form onSubmit={handleAiSend} className="p-4 border-t border-slate-800 bg-slate-950 flex gap-2">
+                    <input 
+                        type="text" 
+                        value={aiInput}
+                        onChange={(e) => setAiInput(e.target.value)}
+                        placeholder="Posez une question..."
+                        className="flex-1 bg-slate-900 border border-slate-700 rounded-full px-4 py-2 text-sm focus:outline-none focus:border-purple-500"
+                    />
+                    <button type="submit" className="p-2 bg-purple-600 rounded-full hover:bg-purple-500 transition-colors"><Send size={18}/></button>
+                </form>
+            </div>
+        )}
+
       </div>
     </div>
   );
