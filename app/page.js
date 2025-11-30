@@ -8,6 +8,7 @@ import {
   Activity, Search, Plus, Trash2, RefreshCw, Briefcase, Globe, BarChart2, Layers, GitCompare, ExternalLink, MessageSquare, X, Send, Bot, Sparkles, ArrowRight, Star, TrendingUp, TrendingDown, ChevronDown, ChevronUp, ArrowLeft
 } from 'lucide-react';
 
+// --- CONFIGURATION ---
 const TIME_RANGES = {
   '1J': { label: '1J', range: '1d', interval: '5m' },
   '5J': { label: '5J', range: '5d', interval: '15m' },
@@ -76,12 +77,11 @@ export default function StockApp() {
   const [visibleNewsCount, setVisibleNewsCount] = useState(4);
   const [showFullDescription, setShowFullDescription] = useState(false);
 
-  // Watchlist
-  const [watchlistData, setWatchlistData] = useState([]);
-  const [loadingWatchlist, setLoadingWatchlist] = useState(false);
+  // Watchlist & Secteurs
   const [sectorData, setSectorData] = useState([]);
   const [selectedSector, setSelectedSector] = useState(null);
   const [loadingList, setLoadingList] = useState(false);
+  const [watchlistData, setWatchlistData] = useState([]);
 
   // Recherche
   const [searchQuery, setSearchQuery] = useState('');
@@ -114,12 +114,21 @@ export default function StockApp() {
       setStockInfo(data);
       setNews(data.news || []); 
       
-      const formattedChart = (data.chart || []).map(item => {
-        const d = new Date(item.date);
-        return { timestamp: d.getTime(), prix: item.prix, dateObj: d };
+      // On s'assure que chart est bien un tableau
+      const rawChart = Array.isArray(data.chart) ? data.chart : [];
+      
+      const formattedChart = rawChart.map(item => {
+        return { 
+            timestamp: item.timestamp, 
+            prix: item.prix, 
+        };
       });
       setChartData(formattedChart);
-    } catch (err) { console.error(err); } finally { setLoading(false); }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -162,11 +171,8 @@ export default function StockApp() {
     setShowSuggestions(false);
   };
 
-  // --- SÉCURITÉ WATCHLIST ---
   const toggleWatchlist = (symbol) => {
-      // On s'assure que watchlist est bien un tableau
       const currentList = Array.isArray(watchlist) ? watchlist : [];
-      
       if (currentList.includes(symbol)) {
           setWatchlist(currentList.filter(s => s !== symbol));
       } else {
@@ -180,23 +186,32 @@ export default function StockApp() {
         return;
     }
     setLoadingList(true);
+    // Promise.allSettled évite le crash si un stock échoue
     const promises = symbols.map(sym => 
         fetch(`/api/stock?symbol=${sym}&range=1d`).then(r => r.json()).catch(e => null)
     );
+    
     const results = await Promise.all(promises);
-    targetSetter(results.filter(r => r && !r.error));
+    // On filtre les nuls et les erreurs
+    const validResults = results.filter(r => r && !r.error && r.price);
+    targetSetter(validResults);
     setLoadingList(false);
   };
 
-  // Watchlist loader
+  // Watchlist loader sécurisé
   const fetchWatchlistData = async () => {
     setLoadingWatchlist(true);
-    // Copie de la fonction fetchMultiple pour la watchlist spécifiquement
+    if (!watchlist || watchlist.length === 0) {
+        setWatchlistData([]);
+        setLoadingWatchlist(false);
+        return;
+    }
+    
     const promises = watchlist.map(sym => 
         fetch(`/api/stock?symbol=${sym}&range=1d`).then(r => r.json()).catch(e => null)
     );
     const results = await Promise.all(promises);
-    setWatchlistData(results.filter(r => r && !r.error));
+    setWatchlistData(results.filter(r => r && !r.error && r.price));
     setLoadingWatchlist(false);
   };
 
@@ -308,12 +323,7 @@ export default function StockApp() {
                         <div>
                             <h1 className="text-3xl font-bold text-white flex items-center gap-3">
                                 {stockInfo.name} <span className="text-xl text-slate-500">({stockInfo.symbol})</span>
-                                <button 
-                                    onClick={() => toggleWatchlist(stockInfo.symbol)} 
-                                    className={`transition-all hover:scale-110 ${watchlist.includes(stockInfo.symbol) ? 'text-yellow-400' : 'text-slate-600 hover:text-yellow-400'}`}
-                                >
-                                    <Star fill={watchlist.includes(stockInfo.symbol) ? "currentColor" : "none"} />
-                                </button>
+                                <button onClick={() => toggleWatchlist(stockInfo.symbol)} className={`transition-all hover:scale-110 ${watchlist.includes(stockInfo.symbol) ? 'text-yellow-400' : 'text-slate-600 hover:text-yellow-400'}`}><Star fill={watchlist.includes(stockInfo.symbol)?"currentColor":"none"}/></button>
                             </h1>
                             <div className="flex items-baseline gap-3 mt-1">
                                 <span className="text-4xl font-bold tracking-tight">${stockInfo.price?.toFixed(2)}</span>
@@ -344,9 +354,35 @@ export default function StockApp() {
                                         </linearGradient>
                                     </defs>
                                     <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false}/>
-                                    <XAxis dataKey="timestamp" type="number" domain={['auto', 'auto']} tickFormatter={formatXAxis} tick={{fill:'#64748b', fontSize:11}} minTickGap={50} axisLine={false} tickLine={false} dy={10}/>
-                                    <YAxis orientation="right" domain={['auto','auto']} tick={{fill:'#64748b', fontSize:11}} tickFormatter={(v)=>v.toFixed(2)} axisLine={false} tickLine={false} dx={10}/>
-                                    <Tooltip contentStyle={{backgroundColor:'#0f172a', borderColor:'#334155', color:'#fff', borderRadius:'8px'}} itemStyle={{color: stockInfo.change>=0?"#4ade80":"#f87171"}} labelFormatter={(v) => new Date(v).toLocaleString()} formatter={(v)=>[v.toFixed(2), 'Prix']} cursor={{ stroke: '#64748b', strokeWidth: 1, strokeDasharray: '4 4' }} isAnimationActive={false}/>
+                                    {/* FIX AXE X : Utilisation de dataMin/dataMax pour zoomer uniquement sur les données existantes */}
+                                    <XAxis 
+                                        dataKey="timestamp" 
+                                        type="number" 
+                                        domain={['dataMin', 'dataMax']} // ASTUCE CRITIQUE POUR LA FLUIDITÉ
+                                        tickFormatter={formatXAxis}
+                                        tick={{fill:'#64748b', fontSize:11}} 
+                                        minTickGap={50} 
+                                        axisLine={false} 
+                                        tickLine={false} 
+                                        dy={10}
+                                    />
+                                    <YAxis 
+                                        orientation="right" 
+                                        domain={['auto','auto']} 
+                                        tick={{fill:'#64748b', fontSize:11}} 
+                                        tickFormatter={(v)=>v.toFixed(2)} 
+                                        axisLine={false} 
+                                        tickLine={false} 
+                                        dx={10}
+                                    />
+                                    <Tooltip 
+                                        contentStyle={{backgroundColor:'#0f172a', borderColor:'#334155', color:'#fff', borderRadius:'8px'}} 
+                                        itemStyle={{color: stockInfo.change>=0?"#4ade80":"#f87171"}}
+                                        labelFormatter={(ts) => new Date(ts).toLocaleString()}
+                                        formatter={(v)=>[v.toFixed(2), 'Prix']}
+                                        cursor={{ stroke: '#64748b', strokeWidth: 1, strokeDasharray: '4 4' }}
+                                        isAnimationActive={false} 
+                                    />
                                     <Area type="monotone" dataKey="prix" stroke={stockInfo.change>=0?"#4ade80":"#f87171"} strokeWidth={2} fill="url(#colorPrice)" isAnimationActive={false}/>
                                 </AreaChart>
                             </ResponsiveContainer>
@@ -378,6 +414,7 @@ export default function StockApp() {
 
                         <div className="lg:col-span-2 bg-slate-900 rounded-2xl p-6 border border-slate-800 flex flex-col">
                             <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Globe size={18} className="text-blue-400"/> Actualités en direct</h3>
+                            
                             <div className="space-y-3 flex-1">
                                 {news.length > 0 ? (
                                     <>
@@ -394,6 +431,7 @@ export default function StockApp() {
                                                 </div>
                                             </a>
                                         ))}
+                                        
                                         {news.length > 4 && (
                                             <button onClick={() => setVisibleNewsCount(prev => prev > 4 ? 4 : prev + 4)} className="w-full py-3 mt-4 flex items-center justify-center gap-2 text-sm font-medium text-slate-400 hover:text-white bg-slate-900 hover:bg-slate-800 rounded-xl border border-slate-800 transition-colors">
                                                 {visibleNewsCount > 4 ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
@@ -408,7 +446,7 @@ export default function StockApp() {
                 </div>
             )}
 
-            {/* VUE WATCHLIST (Code identique) */}
+            {/* VUE WATCHLIST */}
             {activeTab === 'watchlist' && (
                 <div className="max-w-6xl mx-auto animate-in fade-in duration-500">
                     <div className="flex justify-between items-center mb-6">

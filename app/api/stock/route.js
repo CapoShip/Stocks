@@ -19,17 +19,19 @@ export async function GET(request) {
     }
     if (yf.suppressNotices) yf.suppressNotices(['yahooSurvey']);
 
+    // 1. Récupération Données
     const [quote, quoteSummary, searchResult] = await Promise.all([
         yf.quote(symbol),
         yf.quoteSummary(symbol, { modules: ['summaryProfile', 'financialData', 'defaultKeyStatistics', 'recommendationTrend'] }),
         yf.search(symbol, { newsCount: 10 }) 
     ]);
     
+    // 2. Historique avec dates calculées
     const today = new Date();
     const period1 = new Date(today);
 
     switch (range) {
-        case '1d': period1.setDate(today.getDate() - 5); break; 
+        case '1d': period1.setDate(today.getDate() - 5); break; // On prend large pour week-end
         case '5d': period1.setDate(today.getDate() - 7); break;
         case '1mo': period1.setMonth(today.getMonth() - 1); break;
         case '6mo': period1.setMonth(today.getMonth() - 6); break;
@@ -47,11 +49,14 @@ export async function GET(request) {
     const chartResult = await yf.chart(symbol, queryOptions);
     let historical = (chartResult && chartResult.quotes) ? chartResult.quotes : [];
     
-    // NETTOYAGE ET TRI DES DONNÉES (Pour éviter les sauts)
+    // NETTOYAGE CRITIQUE POUR LE GRAPHIQUE
+    // 1. On enlève les valeurs nulles
+    // 2. On trie par date croissante (évite les retours en arrière)
     historical = historical
-        .filter(row => row.date && row.close)
-        .sort((a, b) => new Date(a.date) - new Date(b.date)); // Tri chronologique forcé
+        .filter(row => row.date && row.close !== null && row.close !== undefined)
+        .sort((a, b) => new Date(a.date) - new Date(b.date));
 
+    // Calcul Variation
     let dynamicChange = 0;
     let dynamicChangePercent = 0;
     const currentPrice = quote.regularMarketPrice;
@@ -93,7 +98,12 @@ export async function GET(request) {
       targetPrice: finance.targetMeanPrice || null,
       recommendation: finance.recommendationKey || 'none',
       news: cleanNews,
-      chart: historical.map(row => ({ date: row.date, prix: row.close }))
+      // On envoie le timestamp brut pour que le frontend gère l'axe X parfaitement
+      chart: historical.map(row => ({ 
+          date: row.date, // Gardé pour debug
+          timestamp: new Date(row.date).getTime(), // Pour l'axe X numérique
+          prix: row.close 
+      }))
     };
 
     return NextResponse.json(result);
