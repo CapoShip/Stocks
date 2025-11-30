@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { useChat } from '@ai-sdk/react';
+// ATTENTION : On n'importe plus useChat car on ne streame plus
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
 } from 'recharts';
@@ -10,6 +10,7 @@ import {
   Cpu, Landmark, Car, Heart, Coins 
 } from 'lucide-react';
 
+// --- CONFIGURATION (Identique) ---
 const TIME_RANGES = {
   '1J': { label: '1J', range: '1d', interval: '5m' },
   '1S': { label: '1S', range: '1wk', interval: '30m' },
@@ -96,25 +97,58 @@ export default function StockApp() {
   const [compareData, setCompareData] = useState([]);
   const [loadingCompare, setLoadingCompare] = useState(false);
 
-  // --- IA STANDARD (FIABLE) ---
+  // --- IA CONFIGURATION (NON-STREAMING MANUEL) ---
   const [showAI, setShowAI] = useState(false);
+  const [userText, setUserText] = useState(''); // Input
+  const [messages, setMessages] = useState([]); // Historique
+  const [isLoading, setIsLoading] = useState(false); // Loading state
+  const [error, setError] = useState(null); // Erreur
   const chatEndRef = useRef(null);
   
-  const { messages, input, handleInputChange, handleSubmit, isLoading, error } = useChat({
-    api: '/api/chat',
-    body: {
-        data: stockInfo ? {
-            stockInfo: {
-                symbol: stockInfo.symbol,
-                name: stockInfo.name,
-                price: stockInfo.price,
-                changePercent: stockInfo.changePercent,
-                sector: stockInfo.sector
-            }
-        } : {}
-    },
-    onError: (err) => console.error("Erreur Chat UI:", err)
-  });
+  // Fonction d'envoi manuel
+  const handleNonStreamingSubmit = async (e) => {
+    e.preventDefault();
+    if (!userText.trim() || isLoading) return;
+    
+    const textToSend = userText;
+    const stockPayload = stockInfo ? { stockInfo: { symbol: stockInfo.symbol, price: stockInfo.price, changePercent: stockInfo.changePercent } } : {};
+    
+    // 1. Affiche le message de l'utilisateur
+    setMessages(prev => [...prev, { id: Date.now(), role: 'user', content: textToSend }]);
+    setUserText(''); // Vide l'input
+    setIsLoading(true);
+    setError(null);
+
+    // 2. Ajout du message dans l'historique pour le backend
+    const currentMessages = [...messages, { id: Date.now(), role: 'user', content: textToSend }];
+
+    try {
+        const response = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                messages: currentMessages,
+                data: stockPayload
+            }),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || `Erreur Serveur HTTP ${response.status}`);
+        }
+
+        const data = await response.json(); // On s'attend à un JSON non-streaming
+        
+        // 3. Affiche la réponse de l'IA
+        setMessages(prev => [...prev, { id: data.id || 'ai' + Date.now(), role: 'assistant', content: data.text || "La réponse de l'IA est vide." }]);
+        
+    } catch (err) {
+        console.error("Erreur Chat:", err.message);
+        setError({ message: err.message });
+    } finally {
+        setIsLoading(false);
+    }
+  };
 
   useEffect(() => { 
     if (showAI) chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); 
