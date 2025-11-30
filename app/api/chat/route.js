@@ -5,29 +5,20 @@ export const maxDuration = 30;
 
 export async function POST(req) {
   try {
-    const { messages, data } = await req.json();
+    const { messages } = await req.json();
 
-    const contextStock = data?.stockInfo 
-      ? `CONTEXTE : Action ${data.stockInfo.symbol} à ${data.stockInfo.price}$. Variation: ${data.stockInfo.changePercent}%.`
-      : "Pas d'action spécifique.";
-
-    // On utilise le modèle Flash qui est gratuit et rapide
+    // On utilise gemini-1.5-flash, le modèle le plus stable et gratuit
     const result = await streamText({
       model: google('gemini-1.5-flash'),
-      messages: [
-        // On injecte les instructions comme un "faux" premier message pour éviter les bugs
-        {
-          role: 'user',
-          content: `Tu es un expert en bourse. ${contextStock}. Réponds en français avec des emojis.`
-        },
-        ...messages
-      ],
+      system: 'Tu es un assistant expert en bourse. Réponds en français.',
+      messages,
     });
 
     return result.toDataStreamResponse();
 
   } catch (error) {
-    console.error("ERREUR:", error);
+    // Ceci affichera l'erreur exacte dans les logs Vercel
+    console.error("🛑 ERREUR GOOGLE:", error);
     return new Response(JSON.stringify({ error: error.message }), { status: 500 });
   }
 }
