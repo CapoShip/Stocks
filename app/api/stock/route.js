@@ -10,7 +10,7 @@ export async function GET(request) {
   if (!symbol) return NextResponse.json({ error: 'Symbole manquant' }, { status: 400 });
 
   try {
-    // --- INSTANCIATION SÉCURISÉE ---
+    // --- SÉCURITÉ INSTANCIATION ---
     let yf = yahooFinance;
     // @ts-ignore
     if (yf.default) yf = yf.default;
@@ -20,20 +20,19 @@ export async function GET(request) {
     }
     if (yf.suppressNotices) yf.suppressNotices(['yahooSurvey']);
 
-    // 1. Récupération Parallèle (Optimisation Vitesse)
-    // On demande : Le prix, le profil (secteur), les données financières (cible), et les news
+    // 1. Récupération Massive de Données (Pour l'AI et l'affichage)
     const [quote, quoteSummary, searchResult] = await Promise.all([
         yf.quote(symbol),
-        yf.quoteSummary(symbol, { modules: ['summaryProfile', 'financialData', 'defaultKeyStatistics'] }),
-        yf.search(symbol, { newsCount: 8 }) // On demande 8 news récentes
+        yf.quoteSummary(symbol, { modules: ['summaryProfile', 'financialData', 'defaultKeyStatistics', 'recommendationTrend'] }),
+        yf.search(symbol, { newsCount: 10 }) 
     ]);
     
-    // 2. Historique (Chart) avec calcul de date précis
+    // 2. Gestion Historique
     const today = new Date();
     const period1 = new Date(today);
 
     switch (range) {
-        case '1d': period1.setDate(today.getDate() - 5); break; // Large pour week-end
+        case '1d': period1.setDate(today.getDate() - 5); break; 
         case '5d': period1.setDate(today.getDate() - 7); break;
         case '1mo': period1.setMonth(today.getMonth() - 1); break;
         case '6mo': period1.setMonth(today.getMonth() - 6); break;
@@ -52,7 +51,7 @@ export async function GET(request) {
     let historical = (chartResult && chartResult.quotes) ? chartResult.quotes : [];
     historical = historical.filter(row => row.date && row.close);
 
-    // Calcul Variation Dynamique
+    // Calcul Variation
     let dynamicChange = 0;
     let dynamicChangePercent = 0;
     const currentPrice = quote.regularMarketPrice;
@@ -66,7 +65,7 @@ export async function GET(request) {
         dynamicChangePercent = (dynamicChange / startPrice) * 100;
     }
 
-    // Extraction sécurisée des données
+    // Extraction données pour l'AI
     const summary = quoteSummary.summaryProfile || {};
     const finance = quoteSummary.financialData || {};
     const stats = quoteSummary.defaultKeyStatistics || {};
@@ -78,17 +77,19 @@ export async function GET(request) {
       change: dynamicChange,
       changePercent: dynamicChangePercent,
       
-      // Données fondamentales
+      // Données fondamentales enrichies
       mktCap: quote.marketCap,
       volume: quote.regularMarketVolume,
       peRatio: quote.trailingPE || null,
+      beta: stats.beta || null, // Volatilité
+      dividendYield: summary.dividendYield || null,
       sector: summary.sector || 'N/A',
       industry: summary.industry || 'N/A',
       description: summary.longBusinessSummary || 'Aucune description disponible.',
       targetPrice: finance.targetMeanPrice || null,
-      recommendation: finance.recommendationKey || 'none', // buy, hold, sell
+      recommendation: finance.recommendationKey || 'none',
       
-      // Actualités (Yahoo Search renvoie un tableau 'news')
+      // Actualités
       news: searchResult.news || [],
       
       // Graphique
