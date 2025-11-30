@@ -1,8 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-// 👇 C'EST ICI LA CORRECTION IMPORTANTE (VERSION 4)
-import { useChat } from '@ai-sdk/react'; 
+import { useChat } from '@ai-sdk/react'; // Version 4 (Correct)
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
 } from 'recharts';
@@ -98,13 +97,13 @@ export default function StockApp() {
   const [compareData, setCompareData] = useState([]);
   const [loadingCompare, setLoadingCompare] = useState(false);
 
-  // --- IA CONFIGURATION (CORRECTIF V4) ---
+  // --- IA CONFIGURATION ---
   const [showAI, setShowAI] = useState(false);
   const chatEndRef = useRef(null);
   
+  // Initialisation sécurisée
   const { messages, input, handleInputChange, handleSubmit, isLoading } = useChat({
     api: '/api/chat',
-    // Protection contre les erreurs si stockInfo est null
     body: {
         data: stockInfo ? {
             stockInfo: {
@@ -116,9 +115,8 @@ export default function StockApp() {
             }
         } : {}
     },
-    onError: (err) => {
-        console.error("Erreur Client Chat:", err);
-    }
+    // Si input est undefined, on le force à être une chaine vide
+    initialInput: '' 
   });
 
   useEffect(() => { 
@@ -181,7 +179,8 @@ export default function StockApp() {
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
-    if (searchQuery.trim()) {
+    // PROTECTION ICI : (searchQuery || '')
+    if ((searchQuery || '').trim()) {
         const target = suggestions.length > 0 ? suggestions[0].symbol : searchQuery.toUpperCase();
         selectSuggestion(target);
     }
@@ -579,6 +578,7 @@ export default function StockApp() {
                 </div>
                 
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                    {/* Message d'accueil si vide */}
                     {messages.length === 0 && (
                         <div className="text-center text-slate-500 mt-10 text-sm">
                             <Bot className="mx-auto mb-3 text-slate-600" size={40}/>
@@ -587,6 +587,7 @@ export default function StockApp() {
                         </div>
                     )}
                     
+                    {/* Liste des messages avec protection anti-crash */}
                     {(messages || []).map((m) => (
                         <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                             <div className={`max-w-[85%] p-3 rounded-2xl text-sm whitespace-pre-line ${m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-200'}`}>
@@ -596,18 +597,20 @@ export default function StockApp() {
                         </div>
                     ))}
                     
+                    {/* Indicateur de chargement */}
                     {isLoading && <div className="text-slate-500 text-xs ml-4 animate-pulse flex items-center gap-2"><Sparkles size={12}/> Analyse en cours...</div>}
                     <div ref={chatEndRef} />
                 </div>
 
+                {/* Formulaire de chat - PROTECTION AJOUTÉE ICI (input || '') */}
                 <form onSubmit={handleSubmit} className="p-4 border-t border-slate-800 bg-slate-950 flex gap-2">
                     <input 
-                        value={input} 
+                        value={input || ''} 
                         onChange={handleInputChange} 
                         placeholder="Posez une question..." 
                         className="flex-1 bg-slate-900 border border-slate-700 rounded-full px-4 py-2 text-sm focus:border-purple-500 outline-none"
                     />
-                    <button type="submit" disabled={isLoading || !input.trim()} className="p-2 bg-purple-600 rounded-full text-white hover:bg-purple-500 transition-colors disabled:opacity-50">
+                    <button type="submit" disabled={isLoading || !(input || '').trim()} className="p-2 bg-purple-600 rounded-full text-white hover:bg-purple-500 transition-colors disabled:opacity-50">
                         <ArrowRight size={18}/>
                     </button>
                 </form>
