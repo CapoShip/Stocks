@@ -7,26 +7,27 @@ export async function POST(req) {
   try {
     const { messages, data } = await req.json();
 
-    // 1. On prépare le contexte
     const contextStock = data?.stockInfo 
       ? `CONTEXTE : Action ${data.stockInfo.symbol} à ${data.stockInfo.price}$.`
       : "Pas d'action spécifique.";
 
-    // 2. On triche un peu : on crée un "faux" message utilisateur
-    // qui contient les instructions. Google comprend ça parfaitement.
-    const initialInstruction = {
-      role: 'user',
-      content: `Tu es un expert en bourse. ${contextStock}. 
-                Réponds en français, sois concis.`
-    };
-
-    // 3. On combine tout ça
-    const finalMessages = [initialInstruction, ...messages];
-
     const result = await streamText({
-      model: google('gemini-1.5-flash'),
-      messages: finalMessages,
-      // ⚠️ ON RETIRE LA LIGNE 'SYSTEM' ICI, C'EST ELLE QUI BLOQUE L'AFFICHAGE
+      // CONFIGURATION SPÉCIALE : On désactive les filtres qui bloquent la finance
+      model: google('gemini-1.5-flash', {
+        safetySettings: [
+          { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+          { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+          { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+          { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+        ],
+      }),
+      messages: [
+        {
+          role: 'user',
+          content: `Tu es un expert en bourse. ${contextStock}. Réponds en français.`
+        },
+        ...messages
+      ],
     });
 
     return result.toDataStreamResponse();
