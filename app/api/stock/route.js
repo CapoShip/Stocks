@@ -7,7 +7,7 @@ export async function GET(request) {
   const range = searchParams.get('range') || '1d';
   const interval = searchParams.get('interval') || '15m';
 
-  if (!symbol) return NextResponse.json({ error: 'Symbole manquant' }, { status: 400 });
+  if (!symbol) return NextResponse.json({ error: 'Manquant' }, { status: 400 });
 
   try {
     let yf = yahooFinance;
@@ -68,13 +68,13 @@ export async function GET(request) {
     const finance = quoteSummary.financialData || {};
     const stats = quoteSummary.defaultKeyStatistics || {};
 
-    // Nettoyage des news pour éviter les dates invalides
+    // Nettoyage news
     const cleanNews = (searchResult.news || []).map(n => ({
         uuid: n.uuid,
         link: n.link,
         title: n.title,
         publisher: n.publisher,
-        providerPublishTime: n.providerPublishTime || Date.now() / 1000 // Fallback si pas de date
+        providerPublishTime: n.providerPublishTime || Date.now() / 1000
     }));
 
     const result = {
@@ -84,11 +84,13 @@ export async function GET(request) {
       change: dynamicChange,
       changePercent: dynamicChangePercent,
       
+      // Données fondamentales
       mktCap: quote.marketCap,
       volume: quote.regularMarketVolume,
       peRatio: quote.trailingPE || null,
       beta: stats.beta || null,
-      dividendYield: summary.dividendYield || null,
+      high52: quote.fiftyTwoWeekHigh,
+      low52: quote.fiftyTwoWeekLow,
       sector: summary.sector || 'N/A',
       industry: summary.industry || 'N/A',
       description: summary.longBusinessSummary || 'Aucune description disponible.',

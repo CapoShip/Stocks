@@ -5,7 +5,6 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const query = searchParams.get('q');
 
-  // Si la recherche est vide, on renvoie rien
   if (!query || query.length === 0) {
     return NextResponse.json({ results: [] });
   }
@@ -13,10 +12,10 @@ export async function GET(request) {
   try {
     const results = await yahooFinance.search(query);
     
-    // On garde les actions (EQUITY) et les ETF
+    // On filtre pour garder les actions pertinentes
     const quotes = results.quotes
-      .filter(q => q.isYahooFinance && (q.quoteType === 'EQUITY' || q.quoteType === 'ETF'))
-      .slice(0, 6) // Max 6 résultats
+      .filter(q => q.isYahooFinance)
+      .slice(0, 6)
       .map(q => ({
         symbol: q.symbol,
         name: q.shortname || q.longname || q.symbol,

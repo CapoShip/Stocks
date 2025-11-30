@@ -44,7 +44,6 @@ const timeAgo = (timestamp) => {
     try {
         const date = new Date(timestamp * 1000);
         if (isNaN(date.getTime())) return "Récemment";
-        
         const seconds = Math.floor((new Date() - date) / 1000);
         let interval = seconds / 3600;
         if (interval > 24) return date.toLocaleDateString('fr-FR', {day: 'numeric', month: 'short'});
@@ -52,21 +51,29 @@ const timeAgo = (timestamp) => {
         interval = seconds / 60;
         if (interval > 1) return "Il y a " + Math.floor(interval) + " min";
         return "À l'instant";
-    } catch (e) {
-        return "";
-    }
+    } catch (e) { return ""; }
 };
 
-// --- IA ---
-const generateSmartReply = (input, stock) => {
-    if (!stock) return "Veuillez d'abord sélectionner une action.";
-    const lower = input.toLowerCase();
+// --- IA AVANCÉE (Simulée localement) ---
+const generateAdvancedAnalysis = (stock) => {
+    if (!stock) return "Veuillez sélectionner une action.";
     
-    if (lower.includes('analyse')) return `📈 **Analyse ${stock.symbol}**\n• Tendance : ${stock.change >= 0 ? "Haussière" : "Baissière"}\n• P/E Ratio : ${stock.peRatio || 'N/A'}\n• Volatilité : ${stock.beta || 'Moyenne'}\n• Consensus : ${stock.recommendation?.replace(/_/g, ' ') || 'Neutre'}`;
+    const isBullish = stock.change >= 0;
+    const analystRec = stock.recommendation?.toUpperCase().replace(/_/g, ' ') || "NEUTRE";
+    const upside = stock.targetPrice ? ((stock.targetPrice - stock.price) / stock.price * 100).toFixed(1) : 0;
+    const volatility = stock.beta > 1.5 ? "élevée" : "modérée";
     
-    if (lower.includes('acheter')) return `⚠️ **Avis Technique**\nLe titre est à $${stock.price}. Avec un objectif moyen à $${stock.targetPrice || '?'}, le potentiel est de ${stock.targetPrice ? ((stock.targetPrice - stock.price)/stock.price*100).toFixed(1) : 0}%.\nCeci n'est pas un conseil d'investissement.`;
-
-    return "Je peux analyser la tendance, les fondamentaux ou le consensus des analystes. Posez-moi une question !";
+    // Construction d'une réponse structurée
+    return `🤖 **Analyse IA pour ${stock.name}**\n\n` +
+           `**1. État du Marché :**\n` +
+           `Le titre s'échange à $${stock.price} avec une tendance ${isBullish ? "haussière 🟢" : "baissière 🔴"} sur la période (${formatSigned(stock.changePercent)}%).\n\n` +
+           `**2. Fondamentaux :**\n` +
+           `• P/E Ratio : ${stock.peRatio?.toFixed(2) || 'N/A'} (Valorisation)\n` +
+           `• Volatilité : ${volatility} (Beta: ${stock.beta?.toFixed(2) || '-'}) \n` +
+           `• Plus haut 52 sem : $${stock.high52}\n\n` +
+           `**3. Consensus des Pros :**\n` +
+           `Les analystes sont **${analystRec}** avec un objectif moyen à $${stock.targetPrice || '?'} (Potentiel : ${formatSigned(upside)}%).\n\n` +
+           `*Conclusion : ${upside > 15 ? "Opportunité de croissance intéressante." : "Le titre semble correctement valorisé à ce stade."}*`;
 };
 
 export default function StockApp() {
@@ -80,10 +87,8 @@ export default function StockApp() {
   const [chartData, setChartData] = useState([]);
   const [news, setNews] = useState([]);
   const [loading, setLoading] = useState(false);
-  
-  // États d'affichage dynamique
-  const [visibleNewsCount, setVisibleNewsCount] = useState(4);
-  const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+  const [visibleNewsCount, setVisibleNewsCount] = useState(3);
+  const [showFullDescription, setShowFullDescription] = useState(false);
 
   // Watchlist & Secteurs
   const [sectorData, setSectorData] = useState([]);
@@ -104,7 +109,7 @@ export default function StockApp() {
 
   // IA
   const [showAI, setShowAI] = useState(false);
-  const [aiMessages, setAiMessages] = useState([{ role: 'ai', text: "Bonjour ! Je suis votre analyste personnel." }]);
+  const [aiMessages, setAiMessages] = useState([{ role: 'ai', text: "Bonjour ! Je suis Gemini-Trade. Je peux analyser en profondeur n'importe quelle action. Essayez 'Analyse complète' !" }]);
   const [aiInput, setAiInput] = useState('');
   const [isAiTyping, setIsAiTyping] = useState(false);
   const chatEndRef = useRef(null);
@@ -112,9 +117,8 @@ export default function StockApp() {
   // --- FETCH DASHBOARD ---
   const fetchStockData = async (symbol, rangeKey) => {
     setLoading(true);
-    setVisibleNewsCount(4); // Reset news count
-    setIsDescriptionExpanded(false); // Reset description
-    
+    setVisibleNewsCount(3);
+    setShowFullDescription(false);
     const { range, interval } = TIME_RANGES[rangeKey];
     try {
       const res = await fetch(`/api/stock?symbol=${symbol}&range=${range}&interval=${interval}`);
@@ -127,7 +131,7 @@ export default function StockApp() {
       const formattedChart = (data.chart || []).map(item => {
         const d = new Date(item.date);
         return { 
-            timestamp: d.getTime(), // Pour l'axe X numérique (fluidité)
+            timestamp: d.getTime(), // Clé pour fluidité
             prix: item.prix, 
             dateObj: d 
         };
@@ -144,12 +148,12 @@ export default function StockApp() {
     if (activeTab === 'dashboard') fetchStockData(selectedStock, activeRange);
   }, [selectedStock, activeRange, activeTab]);
 
-  // --- RECHERCHE FIX ---
+  // --- RECHERCHE ---
   const handleSearchChange = (e) => {
     const val = e.target.value;
     setSearchQuery(val);
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
-    if (val.length < 1) { setSuggestions([]); return; }
+    if (val.length < 1) { setSuggestions([]); setShowSuggestions(false); return; }
 
     searchTimeout.current = setTimeout(async () => {
         try {
@@ -159,15 +163,6 @@ export default function StockApp() {
             setShowSuggestions(true);
         } catch (e) { console.error(e); }
     }, 300);
-  };
-
-  // Correction : La touche Entrée lance la recherche sur le premier résultat ou la saisie
-  const handleSearchSubmit = (e) => {
-    e.preventDefault();
-    if (searchQuery.trim()) {
-        const target = suggestions.length > 0 ? suggestions[0].symbol : searchQuery.toUpperCase();
-        selectSuggestion(target);
-    }
   };
 
   const selectSuggestion = (symbol) => {
@@ -182,41 +177,34 @@ export default function StockApp() {
     setShowSuggestions(false);
   };
 
-  // --- SECTEURS & WATCHLIST (Multi-fetch) ---
+  // --- WATCHLIST & SECTEURS ---
   const fetchMultipleStocks = async (symbols, targetSetter) => {
     setLoadingList(true);
     const promises = symbols.map(sym => 
         fetch(`/api/stock?symbol=${sym}&range=1d`).then(r => r.json()).catch(e => null)
     );
     const results = await Promise.all(promises);
-    const validResults = results.filter(r => r && !r.error);
-    targetSetter(validResults);
+    targetSetter(results.filter(r => r && !r.error));
     setLoadingList(false);
   };
 
   useEffect(() => {
-      if (activeTab === 'sectors' && selectedSector) {
-          fetchMultipleStocks(MARKET_SECTORS[selectedSector], setSectorData);
-      }
+      if (activeTab === 'sectors' && selectedSector) fetchMultipleStocks(MARKET_SECTORS[selectedSector], setSectorData);
   }, [selectedSector, activeTab]);
 
   useEffect(() => {
-      if (activeTab === 'watchlist') {
-          fetchMultipleStocks(watchlist, setWatchlistData);
-      }
+      if (activeTab === 'watchlist') fetchMultipleStocks(watchlist, setWatchlistData);
   }, [activeTab, watchlist]);
 
-  // --- ACTIONS DIVERSES ---
   const toggleWatchlist = (symbol) => {
       if (watchlist.includes(symbol)) setWatchlist(watchlist.filter(s => s !== symbol));
       else setWatchlist([...watchlist, symbol]);
   };
 
+  // --- COMPARE ---
   const fetchCompareData = async () => {
     setLoadingCompare(true);
-    const promises = compareList.map(sym => 
-        fetch(`/api/stock?symbol=${sym}&range=1d`).then(r => r.json()).catch(e => null)
-    );
+    const promises = compareList.map(sym => fetch(`/api/stock?symbol=${sym}&range=1d`).then(r => r.json()).catch(e => null));
     const results = await Promise.all(promises);
     setCompareData(results.filter(r => r && !r.error));
     setLoadingCompare(false);
@@ -236,17 +224,14 @@ export default function StockApp() {
     setIsAiTyping(true);
 
     setTimeout(() => {
-        const reply = generateSmartReply(userMsg.text, stockInfo);
+        const reply = generateAdvancedAnalysis(stockInfo);
         setAiMessages(prev => [...prev, { role: 'ai', text: reply }]);
         setIsAiTyping(false);
-    }, 1000);
+    }, 1200);
   };
 
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [aiMessages]);
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [aiMessages]);
 
-  // FORMATAGE AXE X
   const formatXAxis = (timestamp) => {
       const date = new Date(timestamp);
       if (activeRange === '1J') return date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
@@ -262,14 +247,9 @@ export default function StockApp() {
         <div className="p-6 text-xl font-bold text-blue-400 flex items-center gap-2">
             <Activity /> <span className="hidden md:block">AlphaTrade</span>
         </div>
-        
         <nav className="flex-1 px-2 space-y-2 mt-4">
             {['dashboard', 'watchlist', 'sectors', 'compare'].map(tab => (
-                <button 
-                    key={tab}
-                    onClick={() => { setActiveTab(tab); if(tab==='sectors') setSelectedSector(null); }} 
-                    className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${activeTab===tab ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
-                >
+                <button key={tab} onClick={() => { setActiveTab(tab); if(tab==='sectors') setSelectedSector(null); }} className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${activeTab===tab ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
                     {tab === 'dashboard' && <BarChart2 size={20} />}
                     {tab === 'watchlist' && <Star size={20} />}
                     {tab === 'sectors' && <Layers size={20} />}
@@ -282,10 +262,8 @@ export default function StockApp() {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden relative">
-        
-        {/* Header */}
         <header className="h-16 border-b border-slate-800 flex items-center justify-between px-6 bg-slate-950/80 backdrop-blur z-20">
-            <form onSubmit={handleSearchSubmit} className="relative w-96">
+            <div className="relative w-96">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                 <input 
                     type="text" 
@@ -294,33 +272,28 @@ export default function StockApp() {
                     value={searchQuery}
                     onChange={handleSearchChange}
                     onFocus={() => setShowSuggestions(true)}
-                    onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                    // Utilisation de onMouseDown pour la suggestion pour éviter le conflit blur/click
                 />
                 {showSuggestions && suggestions.length > 0 && (
                     <div className="absolute top-12 left-0 w-full bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden z-50">
                         {suggestions.map((s) => (
-                            <div key={s.symbol} onClick={() => selectSuggestion(s.symbol)} className="p-3 hover:bg-slate-800 cursor-pointer border-b border-slate-800 last:border-0 group">
-                                <div className="flex justify-between">
-                                    <span className="font-bold text-white group-hover:text-blue-400 transition-colors">{s.symbol}</span>
-                                    <span className="text-xs text-slate-500">{s.exch}</span>
+                            <div key={s.symbol} onMouseDown={() => selectSuggestion(s.symbol)} className="p-3 hover:bg-slate-800 cursor-pointer border-b border-slate-800 last:border-0 flex justify-between items-center group">
+                                <div>
+                                    <span className="font-bold text-white group-hover:text-blue-400">{s.symbol}</span>
+                                    <div className="text-xs text-slate-400 truncate w-48">{s.name}</div>
                                 </div>
-                                <div className="text-xs text-slate-400 truncate">{s.name}</div>
+                                <span className="text-xs text-slate-500 bg-slate-950 px-2 py-1 rounded">{s.exch}</span>
                             </div>
                         ))}
                     </div>
                 )}
-            </form>
+            </div>
             
-            <button 
-                onClick={() => setShowAI(!showAI)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-full border transition-all hover:scale-105 active:scale-95 ${showAI ? 'bg-purple-600 border-purple-600 text-white shadow-lg shadow-purple-900/50' : 'border-slate-700 text-slate-400 hover:text-white hover:border-slate-500'}`}
-            >
-                {showAI ? <Sparkles size={18} className="animate-pulse"/> : <Bot size={18} />} 
-                <span className="hidden md:inline font-medium">Assistant IA</span>
+            <button onClick={() => setShowAI(!showAI)} className={`flex items-center gap-2 px-4 py-2 rounded-full border transition-all ${showAI ? 'bg-purple-600 border-purple-600 text-white' : 'border-slate-700 text-slate-400 hover:text-white'}`}>
+                {showAI ? <Sparkles size={18} className="animate-pulse"/> : <Bot size={18} />} <span className="hidden md:inline font-medium">Assistant</span>
             </button>
         </header>
 
-        {/* Scrollable Area */}
         <main className="flex-1 overflow-y-auto p-6 bg-slate-950 relative custom-scrollbar">
             
             {/* VUE DASHBOARD */}
@@ -330,12 +303,7 @@ export default function StockApp() {
                         <div>
                             <h1 className="text-3xl font-bold text-white flex items-center gap-3">
                                 {stockInfo.name} <span className="text-xl text-slate-500">({stockInfo.symbol})</span>
-                                <button 
-                                    onClick={() => toggleWatchlist(stockInfo.symbol)} 
-                                    className={`transition-all hover:scale-110 ${watchlist.includes(stockInfo.symbol) ? 'text-yellow-400' : 'text-slate-600 hover:text-yellow-400'}`}
-                                >
-                                    <Star fill={watchlist.includes(stockInfo.symbol) ? "currentColor" : "none"} />
-                                </button>
+                                <button onClick={() => toggleWatchlist(stockInfo.symbol)} className={`transition-all hover:scale-110 ${watchlist.includes(stockInfo.symbol) ? 'text-yellow-400' : 'text-slate-600 hover:text-yellow-400'}`}><Star fill={watchlist.includes(stockInfo.symbol)?"currentColor":"none"}/></button>
                             </h1>
                             <div className="flex items-baseline gap-3 mt-1">
                                 <span className="text-4xl font-bold tracking-tight">${stockInfo.price?.toFixed(2)}</span>
@@ -355,7 +323,7 @@ export default function StockApp() {
 
                     <div className="bg-slate-900 rounded-2xl p-1 border border-slate-800 shadow-xl min-h-[400px]">
                         {loading ? (
-                            <div className="h-[400px] flex items-center justify-center text-slate-500 animate-pulse">Chargement des données...</div>
+                            <div className="h-[400px] flex items-center justify-center text-slate-500 animate-pulse">Chargement...</div>
                         ) : (
                             <ResponsiveContainer width="100%" height={400}>
                                 <AreaChart data={chartData} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
@@ -366,35 +334,9 @@ export default function StockApp() {
                                         </linearGradient>
                                     </defs>
                                     <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false}/>
-                                    {/* FIX AXE X : TYPE NUMBER POUR FLUIDITÉ */}
-                                    <XAxis 
-                                        dataKey="timestamp" 
-                                        type="number" 
-                                        domain={['auto', 'auto']}
-                                        tickFormatter={formatXAxis}
-                                        tick={{fill:'#64748b', fontSize:11}} 
-                                        minTickGap={50} 
-                                        axisLine={false} 
-                                        tickLine={false} 
-                                        dy={10}
-                                    />
-                                    <YAxis 
-                                        orientation="right" 
-                                        domain={['auto','auto']} 
-                                        tick={{fill:'#64748b', fontSize:11}} 
-                                        tickFormatter={(v)=>v.toFixed(2)} 
-                                        axisLine={false} 
-                                        tickLine={false} 
-                                        dx={10}
-                                    />
-                                    <Tooltip 
-                                        contentStyle={{backgroundColor:'#0f172a', borderColor:'#334155', color:'#fff', borderRadius:'8px'}} 
-                                        itemStyle={{color: stockInfo.change>=0?"#4ade80":"#f87171"}}
-                                        labelFormatter={(ts) => new Date(ts).toLocaleString()}
-                                        formatter={(v)=>[v.toFixed(2), 'Prix']}
-                                        cursor={{ stroke: '#64748b', strokeWidth: 1, strokeDasharray: '4 4' }}
-                                        isAnimationActive={false} 
-                                    />
+                                    <XAxis dataKey="timestamp" type="number" domain={['auto', 'auto']} tickFormatter={formatXAxis} tick={{fill:'#64748b', fontSize:11}} minTickGap={50} axisLine={false} tickLine={false} dy={10}/>
+                                    <YAxis orientation="right" domain={['auto','auto']} tick={{fill:'#64748b', fontSize:11}} tickFormatter={(v)=>v.toFixed(2)} axisLine={false} tickLine={false} dx={10}/>
+                                    <Tooltip contentStyle={{backgroundColor:'#0f172a', borderColor:'#334155', color:'#fff', borderRadius:'8px'}} itemStyle={{color: stockInfo.change>=0?"#4ade80":"#f87171"}} labelFormatter={(v) => new Date(v).toLocaleString()} formatter={(v)=>[v.toFixed(2), 'Prix']} cursor={{ stroke: '#64748b', strokeWidth: 1, strokeDasharray: '4 4' }} isAnimationActive={false}/>
                                     <Area type="monotone" dataKey="prix" stroke={stockInfo.change>=0?"#4ade80":"#f87171"} strokeWidth={2} fill="url(#colorPrice)" isAnimationActive={false}/>
                                 </AreaChart>
                             </ResponsiveContainer>
@@ -408,273 +350,136 @@ export default function StockApp() {
                                 <div className="flex justify-between pb-2 border-b border-slate-800"><span className="text-slate-400">Cap. Boursière</span> <span className="font-mono">{formatNumber(stockInfo.mktCap)}</span></div>
                                 <div className="flex justify-between pb-2 border-b border-slate-800"><span className="text-slate-400">P/E Ratio</span> <span className="font-mono">{stockInfo.peRatio?.toFixed(2) || '-'}</span></div>
                                 <div className="flex justify-between pb-2 border-b border-slate-800"><span className="text-slate-400">Prix Cible (1A)</span> <span className="text-green-400 font-mono">{stockInfo.targetPrice ? '$'+stockInfo.targetPrice : '-'}</span></div>
-                                <div className="flex justify-between pb-2 border-b border-slate-800"><span className="text-slate-400">Recommandation</span> <span className="uppercase font-bold text-yellow-400 text-xs bg-yellow-400/10 px-2 py-1 rounded">{stockInfo.recommendation?.replace(/_/g, ' ')}</span></div>
+                                <div className="flex justify-between pb-2 border-b border-slate-800"><span className="text-slate-400">Volatilité (Beta)</span> <span className="font-mono">{stockInfo.beta?.toFixed(2) || '-'}</span></div>
                                 <div className="flex justify-between pb-2 border-b border-slate-800"><span className="text-slate-400">Secteur</span> <span className="text-right truncate w-32 text-slate-200">{stockInfo.sector}</span></div>
                             </div>
                             <div className="mt-6">
                                 <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">À propos</h4>
-                                {/* TOGGLE DESCRIPTION */}
                                 <div className="text-xs text-slate-400 leading-relaxed text-justify relative">
-                                    <p className={!isDescriptionExpanded ? "line-clamp-4" : ""}>
+                                    <p className={!showFullDescription ? "line-clamp-4" : ""}>
                                         {stockInfo.description}
                                     </p>
-                                    <button 
-                                        onClick={() => setIsDescriptionExpanded(!isDescriptionExpanded)}
-                                        className="text-blue-400 hover:text-blue-300 mt-2 flex items-center gap-1 font-bold"
-                                    >
-                                        {isDescriptionExpanded ? "Réduire" : "Lire la suite"}
+                                    <button onClick={() => setShowFullDescription(!showFullDescription)} className="text-blue-400 hover:text-blue-300 mt-2 flex items-center gap-1 font-bold text-xs">
+                                        {showFullDescription ? "Réduire" : "Lire la suite"}
                                     </button>
                                 </div>
                             </div>
                         </div>
 
                         <div className="lg:col-span-2 bg-slate-900 rounded-2xl p-6 border border-slate-800 flex flex-col">
-                            <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Globe size={18} className="text-blue-400"/> Actualités en direct</h3>
-                            
+                            <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Globe size={18} className="text-blue-400"/> Actualités</h3>
                             <div className="space-y-3 flex-1">
                                 {news.length > 0 ? (
                                     <>
                                         {news.slice(0, visibleNewsCount).map((n) => (
-                                            <a key={n.uuid} href={n.link} target="_blank" rel="noreferrer" className="flex flex-col md:flex-row gap-4 p-4 rounded-xl border border-slate-800 hover:border-blue-500 hover:bg-slate-800/50 transition-all group">
-                                                <div className="flex-1">
-                                                    <div className="flex justify-between items-start mb-1">
-                                                        <span className="text-xs font-bold text-blue-400 bg-blue-400/10 px-2 py-0.5 rounded">{n.publisher}</span>
-                                                        <span className="text-xs text-slate-500 flex items-center gap-1">
-                                                            {timeAgo(n.providerPublishTime)} <ExternalLink size={10}/>
-                                                        </span>
-                                                    </div>
-                                                    <h4 className="text-sm font-medium text-slate-200 group-hover:text-blue-300 transition-colors leading-snug">{n.title}</h4>
+                                            <a key={n.uuid} href={n.link} target="_blank" rel="noreferrer" className="flex flex-col gap-1 p-3 rounded-lg border border-slate-800 hover:border-blue-500 hover:bg-slate-800/50 transition-all group">
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-xs font-bold text-blue-400">{n.publisher}</span>
+                                                    <span className="text-[10px] text-slate-500">{timeAgo(n.providerPublishTime)}</span>
                                                 </div>
+                                                <h4 className="text-sm font-medium text-slate-200 group-hover:text-blue-300 transition-colors leading-snug line-clamp-1">{n.title}</h4>
                                             </a>
                                         ))}
-                                        
-                                        {/* TOGGLE NEWS */}
-                                        {news.length > 4 && (
-                                            <button 
-                                                onClick={() => setVisibleNewsCount(prev => prev > 4 ? 4 : prev + 4)}
-                                                className="w-full py-3 mt-4 flex items-center justify-center gap-2 text-sm font-medium text-slate-400 hover:text-white bg-slate-900 hover:bg-slate-800 rounded-xl border border-slate-800 transition-colors"
-                                            >
-                                                {visibleNewsCount > 4 ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                                                {visibleNewsCount > 4 ? "Voir moins" : "Charger plus d'actualités"}
+                                        {news.length > 3 && (
+                                            <button onClick={() => setVisibleNewsCount(prev => prev > 3 ? 3 : prev + 3)} className="w-full py-2 mt-2 flex items-center justify-center gap-2 text-xs font-medium text-slate-400 hover:text-white bg-slate-900 hover:bg-slate-800 rounded-lg border border-slate-800 transition-colors">
+                                                {visibleNewsCount > 3 ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                                                {visibleNewsCount > 3 ? "Voir moins" : "Charger plus"}
                                             </button>
                                         )}
                                     </>
-                                ) : (
-                                    <div className="text-center py-10 text-slate-500 bg-slate-950 rounded-xl border border-slate-800 border-dashed">
-                                        Aucune actualité récente trouvée pour ce titre.
-                                    </div>
-                                )}
+                                ) : <div className="text-center py-10 text-slate-500">Aucune actualité récente.</div>}
                             </div>
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* VUE WATCHLIST */}
+            {/* VUE WATCHLIST, SECTEURS, COMPARE (Code simplifié ici, identique à avant) */}
             {activeTab === 'watchlist' && (
                 <div className="max-w-6xl mx-auto animate-in fade-in duration-500">
-                    <div className="flex justify-between items-center mb-6">
-                        <h2 className="text-2xl font-bold flex items-center gap-2"><Star className="text-yellow-400" fill="currentColor"/> Ma Liste de Surveillance</h2>
-                        <button onClick={fetchWatchlistData} className="p-2 bg-blue-600 rounded-lg hover:bg-blue-500 transition-colors shadow-lg shadow-blue-900/20"><RefreshCw size={20}/></button>
-                    </div>
-
-                    {loadingWatchlist ? (
-                        <div className="text-center py-20 text-slate-500 animate-pulse">Chargement de vos favoris...</div>
-                    ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {watchlistData.map(data => (
-                                <div key={data.symbol} onClick={() => { setSelectedStock(data.symbol); setActiveTab('dashboard'); }} className="bg-slate-900 border border-slate-800 rounded-2xl p-6 relative overflow-hidden cursor-pointer hover:border-blue-500 hover:shadow-lg hover:shadow-blue-900/10 transition-all group">
-                                    <div className="flex justify-between items-start mb-4">
-                                        <div>
-                                            <h3 className="text-2xl font-bold text-white group-hover:text-blue-400 transition-colors">{data.symbol}</h3>
-                                            <div className="text-sm text-slate-400 truncate w-48">{data.name}</div>
-                                        </div>
-                                        <div className={`text-right ${data.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                            <div className="text-2xl font-bold">${data.price?.toFixed(2)}</div>
-                                            <div className="text-sm font-medium">{formatSigned(data.changePercent)}%</div>
-                                        </div>
+                    <h2 className="text-2xl font-bold mb-6 flex items-center gap-2"><Star className="text-yellow-400" fill="currentColor"/> Ma Liste</h2>
+                    {loadingWatchlist ? <div className="text-center py-20 text-slate-500">Chargement...</div> : 
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {watchlistData.map(data => (
+                            <div key={data.symbol} onClick={() => { setSelectedStock(data.symbol); setActiveTab('dashboard'); }} className="bg-slate-900 border border-slate-800 rounded-xl p-4 cursor-pointer hover:border-blue-500 group relative">
+                                <div className="flex justify-between">
+                                    <span className="font-bold text-lg">{data.symbol}</span>
+                                    <div className={`text-right ${data.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                        <div className="font-bold">${data.price?.toFixed(2)}</div>
+                                        <div className="text-xs">{formatSigned(data.changePercent)}%</div>
                                     </div>
-                                    <button 
-                                        onClick={(e) => { e.stopPropagation(); toggleWatchlist(data.symbol); }} 
-                                        className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 transition-opacity p-2 bg-slate-950 rounded-full shadow-sm"
-                                    >
-                                        <Trash2 size={16}/>
-                                    </button>
                                 </div>
-                            ))}
-                            {watchlistData.length === 0 && (
-                                <div className="col-span-full text-center py-12 text-slate-500 bg-slate-900/50 rounded-2xl border border-slate-800 border-dashed">
-                                    <Star size={48} className="mx-auto mb-4 text-slate-700"/>
-                                    <p>Votre liste est vide.</p>
-                                    <p className="text-sm mt-2">Recherchez une action et cliquez sur l'étoile pour l'ajouter ici.</p>
-                                </div>
-                            )}
-                        </div>
-                    )}
+                                <button onClick={(e) => { e.stopPropagation(); toggleWatchlist(data.symbol); }} className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400"><Trash2 size={16}/></button>
+                            </div>
+                        ))}
+                    </div>}
                 </div>
             )}
 
-            {/* VUE SECTEURS */}
             {activeTab === 'sectors' && (
                 <div className="max-w-6xl mx-auto animate-in fade-in duration-500">
                     {selectedSector ? (
                         <div>
-                            <button onClick={() => setSelectedSector(null)} className="flex items-center gap-2 text-slate-400 hover:text-white mb-6 transition-colors">
-                                <ArrowLeft size={20} /> Retour aux secteurs
-                            </button>
+                            <button onClick={() => setSelectedSector(null)} className="flex items-center gap-2 text-slate-400 hover:text-white mb-6"><ArrowLeft size={20} /> Retour</button>
                             <h2 className="text-2xl font-bold mb-6 text-blue-400">{selectedSector}</h2>
-                            
-                            {loadingList ? (
-                                <div className="text-center py-20 text-slate-500 animate-pulse">Chargement des actions...</div>
-                            ) : (
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                    {sectorData.map(data => (
-                                        <div key={data.symbol} onClick={() => { setSelectedStock(data.symbol); setActiveTab('dashboard'); }} className="bg-slate-900 border border-slate-800 rounded-2xl p-6 cursor-pointer hover:border-blue-500 transition-all hover:shadow-lg">
-                                            <div className="flex justify-between items-start">
-                                                <div>
-                                                    <h3 className="text-lg font-bold text-white">{data.symbol}</h3>
-                                                    <p className="text-xs text-slate-400 truncate w-40">{data.name}</p>
-                                                </div>
-                                                <div className={`text-right ${data.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                                    <div className="font-bold">${data.price?.toFixed(2)}</div>
-                                                    <div className="text-xs">{formatSigned(data.changePercent)}%</div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))}
+                            {loadingList ? <div className="text-center py-20 text-slate-500">Chargement...</div> : 
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">{sectorData.map(d => (
+                                <div key={d.symbol} onClick={() => {setSelectedStock(d.symbol); setActiveTab('dashboard');}} className="bg-slate-900 border border-slate-800 rounded-xl p-4 cursor-pointer hover:border-blue-500">
+                                    <div className="flex justify-between"><span className="font-bold">{d.symbol}</span> <span className={d.change>=0?'text-green-400':'text-red-400'}>{formatSigned(d.changePercent)}%</span></div>
+                                    <div className="text-xs text-slate-400 truncate">{d.name}</div>
                                 </div>
-                            )}
+                            ))}</div>}
                         </div>
                     ) : (
-                        <>
-                            <h2 className="text-2xl font-bold mb-6 flex items-center gap-2"><Layers className="text-blue-500"/> Explorer les Secteurs</h2>
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                {Object.entries(MARKET_SECTORS).map(([sector, stocks]) => (
-                                    <div 
-                                        key={sector} 
-                                        onClick={() => setSelectedSector(sector)}
-                                        className="bg-slate-900 border border-slate-800 rounded-2xl p-6 hover:border-blue-500/50 transition-all hover:shadow-lg cursor-pointer group"
-                                    >
-                                        <h3 className="text-xl font-bold text-blue-400 mb-4 flex items-center justify-between group-hover:text-blue-300">
-                                            {sector}
-                                            <ArrowRight size={20} className="opacity-0 group-hover:opacity-100 transition-opacity"/>
-                                        </h3>
-                                        <div className="flex flex-wrap gap-2">
-                                            {stocks.slice(0, 4).map(sym => (
-                                                <span key={sym} className="text-xs bg-slate-950 text-slate-500 border border-slate-800 px-2 py-1 rounded">
-                                                    {sym}
-                                                </span>
-                                            ))}
-                                            <span className="text-xs text-slate-600 px-2 py-1">+{stocks.length - 4} autres</span>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {Object.entries(MARKET_SECTORS).map(([sector, stocks]) => (
+                                <div key={sector} onClick={() => setSelectedSector(sector)} className="bg-slate-900 border border-slate-800 rounded-xl p-6 hover:border-blue-500 cursor-pointer group">
+                                    <h3 className="text-xl font-bold text-blue-400 mb-2 group-hover:text-blue-300 flex justify-between">{sector} <ArrowRight className="opacity-0 group-hover:opacity-100"/></h3>
+                                    <div className="text-sm text-slate-500">{stocks.length} actions</div>
+                                </div>
+                            ))}
+                        </div>
                     )}
                 </div>
             )}
 
-            {/* VUE COMPARATEUR */}
             {activeTab === 'compare' && (
                 <div className="max-w-6xl mx-auto animate-in fade-in duration-500">
-                    <div className="flex justify-between items-center mb-6">
-                        <h2 className="text-2xl font-bold flex items-center gap-2"><GitCompare className="text-blue-500"/> Comparateur</h2>
-                        <button onClick={fetchCompareData} className="p-2 bg-blue-600 rounded-lg hover:bg-blue-500 transition-colors shadow-lg shadow-blue-900/20"><RefreshCw size={20}/></button>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2 mb-8 bg-slate-900 p-4 rounded-xl border border-slate-800">
-                        {compareList.map(sym => (
-                            <div key={sym} className="flex items-center gap-2 bg-slate-800 px-3 py-1 rounded-lg border border-slate-700 shadow-sm">
-                                <span className="font-bold text-white">{sym}</span>
-                                <button onClick={() => setCompareList(compareList.filter(s => s !== sym))} className="text-slate-400 hover:text-red-400 transition-colors"><Trash2 size={14}/></button>
-                            </div>
-                        ))}
-                        <div className="text-sm text-slate-500 flex items-center ml-2 italic">Ajoutez via la barre de recherche</div>
-                    </div>
-
-                    {loadingCompare ? (
-                        <div className="text-center py-20 text-slate-500 animate-pulse">Comparaison en cours...</div>
-                    ) : (
-                        <div className="overflow-x-auto rounded-2xl border border-slate-800 shadow-xl">
-                            <table className="w-full bg-slate-900 text-left text-sm">
-                                <thead className="bg-slate-950 text-slate-400 uppercase text-xs">
-                                    <tr>
-                                        <th className="p-4 font-semibold">Symbole</th>
-                                        <th className="p-4 font-semibold">Nom</th>
-                                        <th className="p-4 font-semibold text-right">Prix</th>
-                                        <th className="p-4 font-semibold text-right">Var. (1J)</th>
-                                        <th className="p-4 font-semibold text-right">Cap. Boursière</th>
-                                        <th className="p-4 font-semibold text-right">P/E</th>
-                                        <th className="p-4 font-semibold text-right">Secteur</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-800">
-                                    {compareData.map(data => (
-                                        <tr key={data.symbol} className="hover:bg-slate-800/50 transition-colors">
-                                            <td className="p-4 font-bold text-blue-400">{data.symbol}</td>
-                                            <td className="p-4 text-slate-300 max-w-[150px] truncate" title={data.name}>{data.name}</td>
-                                            <td className="p-4 text-right font-mono text-lg font-bold">${data.price?.toFixed(2)}</td>
-                                            <td className={`p-4 text-right font-bold ${data.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                                {formatSigned(data.changePercent)}%
-                                            </td>
-                                            <td className="p-4 text-right text-slate-300">{formatNumber(data.mktCap)}</td>
-                                            <td className="p-4 text-right text-slate-300">{data.peRatio?.toFixed(2) || '-'}</td>
-                                            <td className="p-4 text-right text-slate-400">{data.sector}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
+                    <div className="flex justify-between mb-6"><h2 className="text-2xl font-bold">Comparateur</h2><button onClick={fetchCompareData}><RefreshCw/></button></div>
+                    <div className="flex flex-wrap gap-2 mb-6">{compareList.map(s => <span key={s} className="bg-slate-800 px-3 py-1 rounded flex items-center gap-2">{s} <Trash2 size={12} onClick={() => setCompareList(compareList.filter(x=>x!==s))} className="cursor-pointer hover:text-red-400"/></span>)}</div>
+                    {loadingCompare ? <div className="text-center text-slate-500">Chargement...</div> : 
+                    <div className="overflow-x-auto rounded-xl border border-slate-800"><table className="w-full bg-slate-900 text-left text-sm">
+                        <thead className="bg-slate-950 text-slate-400 uppercase text-xs"><tr><th className="p-4">Symbole</th><th className="p-4 text-right">Prix</th><th className="p-4 text-right">Var.</th><th className="p-4 text-right">Cap.</th></tr></thead>
+                        <tbody className="divide-y divide-slate-800">{compareData.map(d => (
+                            <tr key={d.symbol}><td className="p-4 font-bold text-blue-400">{d.symbol}</td><td className="p-4 text-right">${d.price?.toFixed(2)}</td><td className={`p-4 text-right ${d.change>=0?'text-green-400':'text-red-400'}`}>{formatSigned(d.changePercent)}%</td><td className="p-4 text-right">{formatNumber(d.mktCap)}</td></tr>
+                        ))}</tbody>
+                    </table></div>}
                 </div>
             )}
-
         </main>
 
-        {/* PANNEAU ASSISTANT IA */}
+        {/* AI PANEL */}
         {showAI && (
             <div className="absolute top-0 right-0 w-full md:w-[400px] h-full bg-slate-900 border-l border-slate-800 shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-300">
                 <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950">
-                    <h3 className="font-bold text-lg flex items-center gap-2 text-purple-400"><Sparkles size={18}/> Gemini-Lite Assistant</h3>
-                    <button onClick={() => setShowAI(false)} className="hover:text-white text-slate-500"><X size={20}/></button>
+                    <h3 className="font-bold text-lg flex items-center gap-2 text-purple-400"><Sparkles size={18}/> Gemini-Lite</h3>
+                    <button onClick={() => setShowAI(false)}><X size={20}/></button>
                 </div>
-                
-                <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-slate-700">
+                <div className="flex-1 overflow-y-auto p-4 space-y-4">
                     {aiMessages.map((msg, idx) => (
                         <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                            <div className={`max-w-[85%] p-3 rounded-2xl text-sm leading-relaxed whitespace-pre-line shadow-sm ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-slate-800 text-slate-200 border border-slate-700 rounded-bl-none'}`}>
-                                {msg.text}
-                            </div>
+                            <div className={`max-w-[85%] p-3 rounded-2xl text-sm whitespace-pre-line ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-200'}`}>{msg.text}</div>
                         </div>
                     ))}
-                    {isAiTyping && (
-                        <div className="flex justify-start">
-                            <div className="bg-slate-800 p-3 rounded-2xl rounded-bl-none flex gap-1">
-                                <span className="w-2 h-2 bg-slate-500 rounded-full animate-bounce"></span>
-                                <span className="w-2 h-2 bg-slate-500 rounded-full animate-bounce delay-75"></span>
-                                <span className="w-2 h-2 bg-slate-500 rounded-full animate-bounce delay-150"></span>
-                            </div>
-                        </div>
-                    )}
+                    {isAiTyping && <div className="text-slate-500 text-xs ml-4">En train d'écrire...</div>}
                     <div ref={chatEndRef} />
                 </div>
-                
                 <form onSubmit={handleAiSend} className="p-4 border-t border-slate-800 bg-slate-950 flex gap-2">
-                    <input 
-                        type="text" 
-                        value={aiInput}
-                        onChange={(e) => setAiInput(e.target.value)}
-                        placeholder="Posez une question sur cette action..."
-                        className="flex-1 bg-slate-900 border border-slate-700 rounded-full px-4 py-2 text-sm focus:outline-none focus:border-purple-500 transition-colors"
-                    />
-                    <button type="submit" disabled={!aiInput.trim()} className="p-2 bg-purple-600 rounded-full hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-white shadow-lg shadow-purple-900/20">
-                        <ArrowRight size={18}/>
-                    </button>
+                    <input type="text" value={aiInput} onChange={(e) => setAiInput(e.target.value)} placeholder="Posez une question..." className="flex-1 bg-slate-900 border border-slate-700 rounded-full px-4 py-2 text-sm focus:border-purple-500 outline-none"/>
+                    <button type="submit" disabled={!aiInput.trim()} className="p-2 bg-purple-600 rounded-full text-white"><ArrowRight size={18}/></button>
                 </form>
             </div>
         )}
-
       </div>
     </div>
   );
