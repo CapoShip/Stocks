@@ -13,14 +13,13 @@ export async function POST(req) {
     const history = convertToCoreMessages(messages);
     const finalMessages = [{ role: 'system', content: systemInstruction }, ...history];
     
-    // FIX : Utilisation de generateText (NON-STREAMING)
+    // FIX FINAL : Utilisation du modèle 1.0 Pro (stable sur tous les comptes)
     const response = await generateText({
-      model: google('gemini-1.5-flash'),
+      model: google('gemini-1.0-pro'), // 👈 Changement ici
       messages: finalMessages,
       config: { safetySettings: [{ category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' }] },
     });
 
-    // On renvoie la réponse finale comme un simple JSON
     return NextResponse.json({ 
         text: response.text, 
         id: response.id || 'ai-response',
