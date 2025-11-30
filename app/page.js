@@ -102,7 +102,7 @@ export default function StockApp() {
   const [userText, setUserText] = useState(''); // Input
   const [messages, setMessages] = useState([]); // Historique
   const [isLoadingAI, setIsLoadingAI] = useState(false); // Loading state
-  const [errorAI, setErrorAI] = useState(null); // Erreur
+  const [errorAI, setErrorAI] = useState(null); // 🛑 VARIABLE D'ERREUR 🛑
   const chatEndRef = useRef(null);
   
   // Fonction d'envoi manuel (REMPLACE handleSubmit/useChat)
@@ -117,7 +117,7 @@ export default function StockApp() {
     setMessages(prev => [...prev, { id: Date.now(), role: 'user', content: textToSend }]);
     setUserText(''); // Vide l'input
     setIsLoadingAI(true);
-    setErrorAI(null);
+    setErrorAI(null); // Réinitialise l'erreur
 
     // 2. Ajout du message dans l'historique pour le backend
     const currentMessages = [...messages, { id: Date.now(), role: 'user', content: textToSend }];
@@ -137,14 +137,14 @@ export default function StockApp() {
             throw new Error(errorData.error || `Erreur Serveur HTTP ${response.status}`);
         }
 
-        const data = await response.json(); // On s'attend à un JSON non-streaming: {text: ..., id: ...}
+        const data = await response.json(); // On s'attend à un JSON non-streaming
         
         // 3. Affiche la réponse de l'IA
         setMessages(prev => [...prev, { id: data.id || 'ai' + Date.now(), role: 'assistant', content: data.text || "La réponse de l'IA est vide." }]);
         
     } catch (err) {
         console.error("Erreur Chat:", err.message);
-        setErrorAI({ message: err.message });
+        setErrorAI({ message: err.message }); // 🛑 Utilisation de errorAI
     } finally {
         setIsLoadingAI(false);
     }
