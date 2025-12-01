@@ -34,7 +34,7 @@ const SECTOR_STYLES = {
   'Crypto': { icon: Coins, color: 'text-purple-400', bg: 'bg-purple-500/10', border: 'hover:border-purple-500/50', gradient: 'from-purple-500/20' }
 };
 
-const formatNumber = (num: any) => {
+const formatNumber = (num) => {
   if (!num) return '-';
   const n = parseFloat(num);
   if (n >= 1.0e+12) return (n / 1.0e+12).toFixed(2) + "T";
@@ -43,13 +43,13 @@ const formatNumber = (num: any) => {
   return n.toFixed(2);
 };
 
-const formatSigned = (num: any) => {
+const formatSigned = (num) => {
   if (num === undefined || num === null) return '0.00';
   const n = parseFloat(num);
   return (n > 0 ? '+' : '') + n.toFixed(2);
 };
 
-const timeAgo = (timestamp: number) => {
+const timeAgo = (timestamp) => {
   if (!timestamp) return '';
   try {
     const date = new Date(timestamp * 1000);
@@ -65,64 +65,61 @@ const timeAgo = (timestamp: number) => {
 };
 
 export default function StockApp() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'watchlist' | 'sectors' | 'compare'>('dashboard');
+  const [activeTab, setActiveTab] = useState('dashboard');
   const [selectedStock, setSelectedStock] = useState('NVDA'); 
-  const [watchlist, setWatchlist] = useState<string[]>(['AAPL', 'NVDA', 'TSLA', 'AMZN']);
+  const [watchlist, setWatchlist] = useState(['AAPL', 'NVDA', 'TSLA', 'AMZN']);
   
   // Dashboard
-  const [activeRange, setActiveRange] = useState<keyof typeof TIME_RANGES>('1M');
-  const [stockInfo, setStockInfo] = useState<any>(null);
-  const [chartData, setChartData] = useState<any[]>([]);
-  const [news, setNews] = useState<any[]>([]);
+  const [activeRange, setActiveRange] = useState('1M');
+  const [stockInfo, setStockInfo] = useState(null);
+  const [chartData, setChartData] = useState([]);
+  const [news, setNews] = useState([]);
   const [loading, setLoading] = useState(false);
   const [visibleNewsCount, setVisibleNewsCount] = useState(4);
   const [showFullDescription, setShowFullDescription] = useState(false);
 
   // Watchlist & Secteurs
-  const [sectorData, setSectorData] = useState<any[]>([]);
-  const [selectedSector, setSelectedSector] = useState<keyof typeof MARKET_SECTORS | null>(null);
+  const [sectorData, setSectorData] = useState([]);
+  const [selectedSector, setSelectedSector] = useState(null);
   const [loadingList, setLoadingList] = useState(false);
-  const [watchlistData, setWatchlistData] = useState<any[]>([]);
+  const [watchlistData, setWatchlistData] = useState([]);
   const [loadingWatchlist, setLoadingWatchlist] = useState(false);
 
   // Recherche
   const [searchQuery, setSearchQuery] = useState('');
-  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const searchTimeout = useRef<any>(null);
+  const searchTimeout = useRef(null);
 
   // Comparateur
-  const [compareList, setCompareList] = useState<string[]>(['AAPL', 'MSFT', 'GOOGL']);
-  const [compareData, setCompareData] = useState<any[]>([]);
+  const [compareList, setCompareList] = useState(['AAPL', 'MSFT', 'GOOGL']);
+  const [compareData, setCompareData] = useState([]);
   const [loadingCompare, setLoadingCompare] = useState(false);
 
   // --- IA CONFIGURATION (MANUEL & NON-STREAMING) ---
   const [showAI, setShowAI] = useState(false);
-  const [userText, setUserText] = useState(''); // Input
-  const [messages, setMessages] = useState<{id:any, role:'user'|'assistant', content:string}[]>([]); // Historique
-  const [isLoadingAI, setIsLoadingAI] = useState(false); // Loading state
-  const [errorAI, setErrorAI] = useState<{message:string} | null>(null); // Erreur
-  const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const [userText, setUserText] = useState('');
+  const [messages, setMessages] = useState([]); // {id, role, content}
+  const [isLoadingAI, setIsLoadingAI] = useState(false);
+  const [errorAI, setErrorAI] = useState(null);
+  const chatEndRef = useRef(null);
 
-  // 🆕 Mode d'analyse IA
-  const [aiMode, setAiMode] = useState<'pro' | 'yt' | 'buffett' | 'technical' | 'short'>('pro'); 
+  // Mode d'analyse IA
+  const [aiMode, setAiMode] = useState('pro'); // 'pro' | 'yt' | 'buffett' | 'technical' | 'short'
   
-  // Fonction d'envoi manuel (REMPLACE useChat)
-  const handleNonStreamingSubmit = async (e: React.FormEvent) => {
+  const handleNonStreamingSubmit = async (e) => {
     e.preventDefault();
     if (!userText.trim() || isLoadingAI) return;
     
     const textToSend = userText;
     const stockPayload = stockInfo ? { stockInfo: { symbol: stockInfo.symbol, price: stockInfo.price, changePercent: stockInfo.changePercent } } : {};
     
-    // 1. Affiche le message de l'utilisateur
-    const userMessage = { id: Date.now(), role: 'user' as const, content: textToSend };
+    const userMessage = { id: Date.now(), role: 'user', content: textToSend };
     setMessages(prev => [...prev, userMessage]);
-    setUserText(''); // Vide l'input
+    setUserText('');
     setIsLoadingAI(true);
-    setErrorAI(null); // Réinitialise l'erreur
+    setErrorAI(null);
 
-    // 2. Ajout du message dans l'historique pour le backend
     const currentMessages = [...messages, userMessage];
 
     try {
@@ -132,22 +129,28 @@ export default function StockApp() {
         body: JSON.stringify({ 
           messages: currentMessages,
           data: stockPayload,
-          mode: aiMode,          // 🆕 on envoie le mode à l'API
+          mode: aiMode,
         }),
       });
 
       if (!response.ok) {
-        let errorData: any = {};
+        let errorData = {};
         try { errorData = await response.json(); } catch {}
         throw new Error(errorData.error || `Erreur Serveur HTTP ${response.status}`);
       }
 
-      const data = await response.json(); // {text, id}
+      const data = await response.json();
       
-      // 3. Affiche la réponse de l'IA
-      setMessages(prev => [...prev, { id: data.id || 'ai' + Date.now(), role: 'assistant', content: data.text || "La réponse de l'IA est vide." }]);
+      setMessages(prev => [
+        ...prev, 
+        { 
+          id: data.id || 'ai' + Date.now(), 
+          role: 'assistant', 
+          content: data.text || "La réponse de l'IA est vide." 
+        }
+      ]);
         
-    } catch (err: any) {
+    } catch (err) {
       console.error("Erreur Chat:", err.message);
       setErrorAI({ message: err.message });
     } finally {
@@ -161,7 +164,7 @@ export default function StockApp() {
 
   // --- FIN CONFIG IA ---
 
-  const fetchStockData = async (symbol: string, rangeKey: keyof typeof TIME_RANGES) => {
+  const fetchStockData = async (symbol, rangeKey) => {
     setLoading(true);
     setVisibleNewsCount(4);
     setShowFullDescription(false);
@@ -179,12 +182,10 @@ export default function StockApp() {
       
       const rawChart = Array.isArray(data.chart) ? data.chart : [];
       
-      const formattedChart = rawChart.map((item: any) => {
-        return { 
-          timestamp: item.timestamp, 
-          prix: parseFloat(item.prix.toFixed(2)), 
-        };
-      });
+      const formattedChart = rawChart.map((item) => ({
+        timestamp: item.timestamp, 
+        prix: parseFloat(item.prix.toFixed(2)), 
+      }));
       setChartData(formattedChart);
     } catch (err) {
       console.error(err);
@@ -197,7 +198,7 @@ export default function StockApp() {
     if (activeTab === 'dashboard') fetchStockData(selectedStock, activeRange);
   }, [selectedStock, activeRange, activeTab]);
 
-  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSearchChange = (e) => {
     const val = e.target.value;
     setSearchQuery(val);
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
@@ -213,7 +214,7 @@ export default function StockApp() {
     }, 300);
   };
 
-  const handleSearchSubmit = (e: React.FormEvent) => {
+  const handleSearchSubmit = (e) => {
     e.preventDefault();
     if ((searchQuery || '').trim()) {
       const target = suggestions.length > 0 ? suggestions[0].symbol : searchQuery.toUpperCase();
@@ -221,7 +222,7 @@ export default function StockApp() {
     }
   };
 
-  const selectSuggestion = (symbol: string) => {
+  const selectSuggestion = (symbol) => {
     if (activeTab === 'compare') {
       if (!compareList.includes(symbol)) setCompareList([...compareList, symbol]);
     } else {
@@ -233,7 +234,7 @@ export default function StockApp() {
     setShowSuggestions(false);
   };
 
-  const toggleWatchlist = (symbol: string) => {
+  const toggleWatchlist = (symbol) => {
     const currentList = Array.isArray(watchlist) ? watchlist : [];
     if (currentList.includes(symbol)) {
       setWatchlist(currentList.filter(s => s !== symbol));
@@ -242,18 +243,18 @@ export default function StockApp() {
     }
   };
 
-  const fetchMultipleStocks = async (symbols: string[], targetSetter: (data:any[])=>void) => {
+  const fetchMultipleStocks = async (symbols, targetSetter) => {
     if (!symbols || symbols.length === 0) {
       targetSetter([]);
       return;
     }
     setLoadingList(true);
     const promises = symbols.map(sym => 
-      fetch(`/api/stock?symbol=${sym}&range=1d`).then(r => r.json()).catch(e => null)
+      fetch(`/api/stock?symbol=${sym}&range=1d`).then(r => r.json()).catch(() => null)
     );
     
     const results = await Promise.all(promises);
-    const validResults = results.filter((r: any) => r && !r.error && r.price);
+    const validResults = results.filter(r => r && !r.error && r.price);
     targetSetter(validResults);
     setLoadingList(false);
   };
@@ -267,15 +268,17 @@ export default function StockApp() {
     }
     
     const promises = watchlist.map(sym => 
-      fetch(`/api/stock?symbol=${sym}&range=1d`).then(r => r.json()).catch(e => null)
+      fetch(`/api/stock?symbol=${sym}&range=1d`).then(r => r.json()).catch(() => null)
     );
     const results = await Promise.all(promises);
-    setWatchlistData(results.filter((r: any) => r && !r.error && r.price));
+    setWatchlistData(results.filter(r => r && !r.error && r.price));
     setLoadingWatchlist(false);
   };
 
   useEffect(() => {
-    if (activeTab === 'sectors' && selectedSector) fetchMultipleStocks(MARKET_SECTORS[selectedSector], setSectorData);
+    if (activeTab === 'sectors' && selectedSector) {
+      fetchMultipleStocks(MARKET_SECTORS[selectedSector], setSectorData);
+    }
   }, [selectedSector, activeTab]);
 
   useEffect(() => {
@@ -284,9 +287,11 @@ export default function StockApp() {
 
   const fetchCompareData = async () => {
     setLoadingCompare(true);
-    const promises = compareList.map(sym => fetch(`/api/stock?symbol=${sym}&range=1d`).then(r => r.json()).catch(e => null));
+    const promises = compareList.map(sym => 
+      fetch(`/api/stock?symbol=${sym}&range=1d`).then(r => r.json()).catch(() => null)
+    );
     const results = await Promise.all(promises);
-    setCompareData(results.filter((r: any) => r && !r.error));
+    setCompareData(results.filter(r => r && !r.error));
     setLoadingCompare(false);
   };
 
@@ -294,7 +299,7 @@ export default function StockApp() {
     if (activeTab === 'compare') fetchCompareData();
   }, [activeTab, compareList]);
 
-  const formatXAxis = (timestamp: number) => {
+  const formatXAxis = (timestamp) => {
     const date = new Date(timestamp);
     if (activeRange === '1J') return date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
     if (activeRange === '1S' || activeRange === '5J') return date.toLocaleDateString([], {weekday: 'short'});
@@ -314,7 +319,7 @@ export default function StockApp() {
             <button 
               key={tab} 
               onClick={() => { 
-                setActiveTab(tab as any); 
+                setActiveTab(tab); 
                 if(tab==='sectors') setSelectedSector(null); 
               }} 
               className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${
@@ -377,7 +382,7 @@ export default function StockApp() {
 
         <main className="flex-1 overflow-y-auto p-6 bg-slate-950 relative custom-scrollbar">
             
-          {/* VUE DASHBOARD */}
+          {/* DASHBOARD */}
           {activeTab === 'dashboard' && stockInfo && (
             <div className="space-y-6 max-w-7xl mx-auto pb-20 animate-in fade-in duration-500">
               <div className="flex flex-col md:flex-row justify-between items-end gap-4">
@@ -408,7 +413,7 @@ export default function StockApp() {
                   {Object.keys(TIME_RANGES).map(r => (
                     <button 
                       key={r} 
-                      onClick={() => setActiveRange(r as any)} 
+                      onClick={() => setActiveRange(r)} 
                       className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${
                         activeRange===r ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white hover:bg-slate-800'
                       }`}
@@ -447,7 +452,7 @@ export default function StockApp() {
                         orientation="right" 
                         domain={['auto','auto']} 
                         tick={{fill:'#64748b', fontSize:11}} 
-                        tickFormatter={(v:any)=>v.toFixed(2)} 
+                        tickFormatter={(v)=>v.toFixed(2)} 
                         axisLine={false} 
                         tickLine={false} 
                         dx={10}
@@ -462,8 +467,8 @@ export default function StockApp() {
                         itemStyle={{
                           color: stockInfo.change>=0?"#4ade80":"#f87171"
                         }}
-                        labelFormatter={(ts) => new Date(ts as any).toLocaleString()}
-                        formatter={(v:any)=>[v.toFixed(2), 'Prix']}
+                        labelFormatter={(ts) => new Date(ts).toLocaleString()}
+                        formatter={(v)=>[v.toFixed(2), 'Prix']}
                         cursor={{ stroke: '#64748b', strokeWidth: 1, strokeDasharray: '4 4' }}
                         isAnimationActive={false} 
                       />
@@ -540,7 +545,7 @@ export default function StockApp() {
                   <div className="space-y-3 flex-1">
                     {news.length > 0 ? (
                       <>
-                        {news.slice(0, visibleNewsCount).map((n: any) => (
+                        {news.slice(0, visibleNewsCount).map((n) => (
                           <a 
                             key={n.uuid} 
                             href={n.link} 
@@ -585,7 +590,7 @@ export default function StockApp() {
             </div>
           )}
 
-          {/* VUE WATCHLIST */}
+          {/* WATCHLIST */}
           {activeTab === 'watchlist' && (
             <div className="max-w-6xl mx-auto animate-in fade-in duration-500">
               <div className="flex justify-between items-center mb-6">
@@ -605,7 +610,7 @@ export default function StockApp() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {watchlistData.map((data:any) => (
+                  {watchlistData.map((data) => (
                     <div 
                       key={data.symbol} 
                       onClick={() => { setSelectedStock(data.symbol); setActiveTab('dashboard'); }} 
@@ -634,7 +639,7 @@ export default function StockApp() {
             </div>
           )}
 
-          {/* VUE SECTEURS */}
+          {/* SECTEURS */}
           {activeTab === 'sectors' && (
             <div className="max-w-6xl mx-auto animate-in zoom-in duration-300">
               {selectedSector ? (
@@ -664,7 +669,7 @@ export default function StockApp() {
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {sectorData.map((d:any) => (
+                      {sectorData.map((d) => (
                         <div 
                           key={d.symbol} 
                           onClick={() => {setSelectedStock(d.symbol); setActiveTab('dashboard');}} 
@@ -706,15 +711,14 @@ export default function StockApp() {
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {Object.entries(MARKET_SECTORS).map(([sector, stocks]) => {
-                      const style = SECTOR_STYLES[sector as keyof typeof SECTOR_STYLES] || SECTOR_STYLES['Technologie'];
+                      const style = SECTOR_STYLES[sector] || SECTOR_STYLES['Technologie'];
                       const Icon = style.icon;
                       return (
                         <div 
                           key={sector} 
-                          onClick={() => setSelectedSector(sector as any)} 
+                          onClick={() => setSelectedSector(sector)} 
                           className={`relative overflow-hidden bg-slate-900 border border-slate-800 rounded-3xl p-6 cursor-pointer group transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl ${style.border}`}
                         >
-                          {/* Gradient Background Effect */}
                           <div className={`absolute top-0 right-0 w-64 h-64 bg-gradient-to-br ${style.gradient} to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none`}></div>
                           
                           <div className="relative z-10">
@@ -743,7 +747,7 @@ export default function StockApp() {
             </div>
           )}
 
-          {/* VUE COMPARATEUR */}
+          {/* COMPARATEUR */}
           {activeTab === 'compare' && (
             <div className="max-w-6xl mx-auto animate-in fade-in duration-500">
               <div className="flex justify-between mb-6">
@@ -783,7 +787,7 @@ export default function StockApp() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800">
-                      {compareData.map((d:any) => (
+                      {compareData.map((d) => (
                         <tr key={d.symbol}>
                           <td className="p-4 font-bold text-blue-400">
                             {d.symbol}
@@ -809,7 +813,7 @@ export default function StockApp() {
           )}
         </main>
 
-        {/* AI PANEL (MANUEL & NON-STREAMING) */}
+        {/* AI PANEL */}
         {showAI && (
           <div className="absolute top-0 right-0 w-full md:w-[400px] h-full bg-slate-900 border-l border-slate-800 shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-300">
             {/* Header */}
@@ -822,7 +826,7 @@ export default function StockApp() {
               </button>
             </div>
 
-            {/* Sélecteur de mode */}
+            {/* Mode selector */}
             <div className="px-4 pt-3 pb-2 border-b border-slate-800 bg-slate-950">
               <div className="text-xs text-slate-400 mb-2">Mode d’analyse</div>
               <div className="flex flex-wrap gap-2">
@@ -836,7 +840,7 @@ export default function StockApp() {
                   <button
                     key={m.id}
                     type="button"
-                    onClick={() => setAiMode(m.id as any)}
+                    onClick={() => setAiMode(m.id)}
                     className={
                       "text-xs px-3 py-1 rounded-full border transition-all " +
                       (aiMode === m.id
@@ -850,9 +854,8 @@ export default function StockApp() {
               </div>
             </div>
             
-            {/* Corps du chat */}
+            {/* Chat body */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {/* Message d'erreur */}
               {errorAI && (
                 <div className="bg-red-500/20 text-red-400 p-3 rounded-lg text-xs border border-red-500/50 mb-4">
                   ⚠️ Erreur : {errorAI.message}
@@ -867,15 +870,15 @@ export default function StockApp() {
                 </div>
               )}
               
-              {(messages || []).map((m) => (
+              {messages.map((m) => (
                 <div 
                   key={m.id} 
                   className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
-                  <div className={`
-                    max-w-[85%] p-3 rounded-2xl text-sm whitespace-pre-line 
-                    ${m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-200'}
-                  `}>
+                  <div className={
+                    "max-w-[85%] p-3 rounded-2xl text-sm whitespace-pre-line " +
+                    (m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-200')
+                  }>
                     {m.role === 'assistant' && (
                       <span className="font-bold text-purple-400 block mb-1 text-xs">
                         IA
