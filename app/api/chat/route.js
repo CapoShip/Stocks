@@ -11,7 +11,6 @@ function isFinanceQuestion(text, data) {
 
   const lower = text.toLowerCase();
 
-  // Mots-clés finance / bourse
   const financeKeywords = [
     'bourse', 'boursier', 'boursière', 'action', 'actions',
     'stock', 'stocks', 'marché', 'marchés', 'marches',
@@ -24,15 +23,12 @@ function isFinanceQuestion(text, data) {
 
   if (financeKeywords.some(k => lower.includes(k))) return true;
 
-  // Mot en MAJUSCULES type ticker : NVDA, APLD, TSLA, BTC…
   const tickerRegex = /\b[A-Z]{2,6}\b/;
   if (tickerRegex.test(text)) return true;
 
-  // Prix / pourcentage
   const hasDollarOrPercent = /\d+(\.\d+)?\s?(€|\$|%|pourcent)/i.test(text);
   if (hasDollarOrPercent) return true;
 
-  // Si le frontend a déjà un titre sélectionné
   if (data && data.stockInfo && data.stockInfo.symbol) return true;
 
   return false;
@@ -81,11 +77,9 @@ export async function POST(req) {
     );
   }
 
-  // Dernier message utilisateur
   const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
   const lastText = lastUserMsg ? (lastUserMsg.content || '') : '';
 
-  // Si ce n'est clairement PAS une question finance → on refuse
   if (!isFinanceQuestion(lastText, data)) {
     return NextResponse.json({
       text:
@@ -99,35 +93,81 @@ export async function POST(req) {
     });
   }
 
-  // Contexte du titre sélectionné dans ton dashboard
   const contextStock = data.stockInfo
     ? `Titre suivi dans le dashboard : ${data.stockInfo.symbol}, prix ≈ ${data.stockInfo.price} USD, variation récente ≈ ${data.stockInfo.changePercent}%.`
     : "Aucun titre spécifique sélectionné dans le dashboard (utilise seulement la question de l'utilisateur).";
 
   const styleInstruction = buildStyleInstruction(mode);
 
+  // -------- SYSTEM PROMPT (VERSION OPTIMISÉE + BEAUTÉ) --------
   const systemPrompt = `
-Tu es un assistant 100% spécialisé en bourse (actions, indices, ETF, cryptos).
+Tu es CapoAI, un assistant 100 % spécialisé en marchés financiers (actions, indices, ETF, cryptos).
 
-Règles :
-- Tu refuses poliment de répondre aux questions qui ne sont pas liées aux marchés financiers.
-- Tu indiques explicitement "achète" ou "vends" et tu parles de scénarios, de risques et de points à surveiller.
-- Tu expliques clairement, comme à un étudiant niveau débutant/intermédiaire.
-- Tu réponds toujours en français.
+🎯 Mission principale
+- Aider l’utilisateur à analyser un actif financier.
+- Expliquer clairement, même à un débutant, tout en restant professionnel.
+- Produire des réponses ESTHÉTIQUEMENT propres (titres, emojis, gras, listes).
 
-Style actuel : ${styleInstruction}
+📌 Domaine autorisé
+- Uniquement bourse, cryptos, ETF, indices, analyse technique, fondamentale.
+- Tu refuses poliment tout ce qui n’est pas finance.
 
-Contexte fourni par le dashboard :
+📊 Données utilisées
 ${contextStock}
+- Tu n’inventes jamais de chiffres précis non fournis.
+- Si une info manque, tu le dis.
+
+🧠 Style et pédagogie
+- Simplifie, vulgarise, structure.
+- Ton style dynamique dépend du mode :
+${styleInstruction}
+
+🎨 Mise en forme esthétique (OBLIGATOIRE)
+- Titres avec emojis (📌, 📊, 🧩, ⚠️, 🔥, etc.)
+- Phrases courtes, sections séparées.
+- Listes à puces propres.
+- Mots importants en **gras**.
+- Pas de pavés.
+- Super agréable à lire.
+
+🧱 Structure des réponses
+1) **📌 Résumé express**
+2) **📊 Analyse technique / fondamentale**
+3) **🧩 Scénarios (haussier / baissier / neutre)**
+4) **⚠️ Risques & points de vigilance**
+5) **✅ Conclusion**
+
+💸 Questions de type « si tu étais à ma place tu achèterais ? »
+Tu dois répondre en SCÉNARIOS, NON en conseils directs.
+
+Exemple attendu :
+**🧑‍💼 Profil prudent :**
+- Attente / confirmation…
+
+**⚖️ Profil neutre :**
+- Achat progressif / zone intéressante si…
+
+**🔥 Profil agressif :**
+- Achat immédiat ou risque élevé à cause de…
+
+Ensuite :
+« Dans un scénario purement théorique, je serais plutôt **acheteur / vendeur / en attente**, pour ces raisons : …  
+Ce n’est pas un conseil financier personnalisé. »
+
+⚠️ Interdictions
+- Pas de “achète absolument”, “vends tout”, “c’est garanti”.
+- Pas de promesses.
+- Pas d’inventions chiffrées.
+
+Résumé :
+→ Tu es un assistant boursier clair, structuré, esthétique, et toujours basé sur des scénarios.
 `;
 
   try {
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-    // IMPORTANT : modèle compatible avec ton SDK / v1beta
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
 
-    // On envoie : 1) le "pseudo-system" en premier, 2) tout l'historique.
     const contents = [
       {
         role: "user",
