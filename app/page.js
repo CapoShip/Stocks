@@ -29,9 +29,6 @@ export default function StockApp() {
   const [selectedStock, setSelectedStock] = useState('NVDA');
   const [watchlist, setWatchlist] = useState(['AAPL', 'NVDA', 'TSLA', 'AMZN']);
 
-  // pour Sidebar uniquement (SectorsTab gère son propre état interne)
-  const [selectedSector, setSelectedSector] = useState(null);
-
   // Dashboard
   const [activeRange, setActiveRange] = useState('1M');
   const [stockInfo, setStockInfo] = useState(null);
@@ -318,7 +315,6 @@ export default function StockApp() {
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        setSelectedSector={setSelectedSector} // peut juste faire setSelectedSector(null) quand on clique sur "Secteurs"
       />
 
       <div className="flex-1 flex flex-col overflow-hidden relative">
@@ -370,8 +366,8 @@ export default function StockApp() {
 
           {activeTab === 'sectors' && (
             <SectorsTab
-              onSelectStock={(sym) => {
-                setSelectedStock(sym);
+              onSelectStock={(symbol) => {
+                setSelectedStock(symbol);
                 setActiveTab('dashboard');
               }}
             />
