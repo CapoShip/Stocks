@@ -125,7 +125,7 @@ ${contextStock}
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
     // IMPORTANT : modèle compatible avec ton SDK / v1beta
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
 
     // On envoie : 1) le "pseudo-system" en premier, 2) tout l'historique.
     const contents = [
