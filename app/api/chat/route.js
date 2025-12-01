@@ -9,25 +9,28 @@ export async function POST(req) {
     return new Response(JSON.stringify({ error: "Clé Groq manquante" }), { status: 500 });
   }
 
-  let body;
+  let messages = []; // 👈 Initialise messages à un tableau vide ici
+  let data = {};
+
   try {
     // 1. Tente d'analyser le corps de la requête
-    body = await req.json();
+    const body = await req.json();
+    
+    // 2. Assure-toi que les propriétés existent, sinon elles restent un tableau vide ou un objet vide
+    messages = body.messages || []; 
+    data = body.data || {};
+    
   } catch (e) {
-    // Si le JSON est mal formé ou vide, on renvoie une erreur client 400
-    return new Response(JSON.stringify({ error: "Requête mal formée (JSON Invalide)" }), { status: 400 });
+    // Si le JSON est mal formé ou vide, on renvoie une erreur 400
+    return new Response(JSON.stringify({ error: "Requête mal formée (JSON Invalide ou corps vide)" }), { status: 400 });
   }
 
   try {
-    // 🛑 LE CORRECTIF DÉFENSIF FINAL : Assurer que 'messages' est un tableau
-    const { messages, data } = body;
-    const cleanMessages = messages || []; 
-
-    const contextStock = data?.stockInfo ? `Action ${data.stockInfo.symbol} à ${data.stockInfo.price}$.` : "Pas d'action.";
+    const contextStock = data.stockInfo ? `Action ${data.stockInfo.symbol} à ${data.stockInfo.price}$.` : "Pas d'action.";
 
     const systemInstruction = `Tu es un expert en bourse. CONTEXTE: ${contextStock} Réponds en français.`;
 
-    const history = convertToCoreMessages(cleanMessages); // Maintenant, on est sûr que c'est un tableau
+    const history = convertToCoreMessages(messages); // Utilise le tableau garanti
     const finalMessages = [{ role: 'system', content: systemInstruction }, ...history];
     
     const response = await generateText({
@@ -42,8 +45,8 @@ export async function POST(req) {
     });
 
   } catch (error) {
-    // Si on arrive ici, c'est que Groq a planté ou la clé est mauvaise.
+    // Erreur de l'API Groq
     console.error("ERREUR CRITIQUE [FINAL]:", error);
-    return new Response(JSON.stringify({ error: error.message || "Erreur inconnue" }), { status: 500 });
+    return new Response(JSON.stringify({ error: error.message || "Erreur inconnue de l'API" }), { status: 500 });
   }
 }
