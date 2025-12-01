@@ -9,28 +9,30 @@ export async function POST(req) {
     return new Response(JSON.stringify({ error: "Clé Groq manquante" }), { status: 500 });
   }
 
-  let messages = []; // 👈 Initialise messages à un tableau vide ici
-  let data = {};
+  let messages = []; // 🛑 INITIALISATION DE SECURITE #1
+  let data = {};     // Initialisation de l'objet de données
+  let body;
 
   try {
-    // 1. Tente d'analyser le corps de la requête
-    const body = await req.json();
+    // 1. Lecture du corps de la requête
+    body = await req.json();
     
-    // 2. Assure-toi que les propriétés existent, sinon elles restent un tableau vide ou un objet vide
-    messages = body.messages || []; 
+    // 2. Assignation des valeurs, avec protection contre null/undefined
+    messages = body.messages || []; // 🛑 PROTECTION FINALE
     data = body.data || {};
-    
+
   } catch (e) {
-    // Si le JSON est mal formé ou vide, on renvoie une erreur 400
-    return new Response(JSON.stringify({ error: "Requête mal formée (JSON Invalide ou corps vide)" }), { status: 400 });
+    // Si le JSON est mal formé ou vide (client envoie un corps bizarre)
+    return new Response(JSON.stringify({ error: "Requête mal formée (Le corps JSON est invalide)" }), { status: 400 });
   }
 
   try {
+    // Assigner les données du contexte (maintenant que nous sommes sûrs que 'data' est un objet)
     const contextStock = data.stockInfo ? `Action ${data.stockInfo.symbol} à ${data.stockInfo.price}$.` : "Pas d'action.";
 
     const systemInstruction = `Tu es un expert en bourse. CONTEXTE: ${contextStock} Réponds en français.`;
 
-    const history = convertToCoreMessages(messages); // Utilise le tableau garanti
+    const history = convertToCoreMessages(messages); // Utilisation de l'array garanti
     const finalMessages = [{ role: 'system', content: systemInstruction }, ...history];
     
     const response = await generateText({
@@ -45,8 +47,7 @@ export async function POST(req) {
     });
 
   } catch (error) {
-    // Erreur de l'API Groq
-    console.error("ERREUR CRITIQUE [FINAL]:", error);
-    return new Response(JSON.stringify({ error: error.message || "Erreur inconnue de l'API" }), { status: 500 });
+    console.error("ERREUR CRITIQUE [MAP CRASH]:", error);
+    return new Response(JSON.stringify({ error: error.message || "Erreur inconnue" }), { status: 500 });
   }
 }
