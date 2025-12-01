@@ -62,7 +62,7 @@ export async function POST(req) {
   }
 
   let messages = [];
-  let data: any = {};
+  let data = {};
   let mode = 'pro';
 
   try {
@@ -100,7 +100,6 @@ export async function POST(req) {
 
   const styleInstruction = buildStyleInstruction(mode);
 
-  // -------- SYSTEM PROMPT ULTRA OPTIMISÉ (0 astérisques) --------
   const systemPrompt = `
 Tu es CapoAI, assistant boursier premium intégré à la plateforme CapoStocks.
 
@@ -191,7 +190,6 @@ LANGUE
 
   try {
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
 
     const contents = [
@@ -216,7 +214,7 @@ LANGUE
       id: Date.now().toString(),
       role: 'assistant',
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("ERREUR CRITIQUE [API CHAT / GEMINI]:", error);
     return NextResponse.json(
       { error: error.message || "Erreur inconnue de l'API Gemini" },
