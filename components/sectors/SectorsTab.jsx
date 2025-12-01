@@ -14,18 +14,65 @@ import {
 } from 'lucide-react';
 import { formatNumber, formatSigned } from '@/lib/formatters';
 
-// mapping pour Finnhub (secteurs classiques)
-const FINNHUB_SECTOR_MAP = {
-  Technologie: 'technology',
-  Finance: 'finance',
-  Auto: 'auto',
-  Santé: 'healthcare',
-};
+// ------------------
+// 1) LISTES PAR SECTEUR (tout statique)
+// ------------------
 
-// secteurs statiques (Yahoo) : Crypto + ton secteur Gamble
-// 👉 tu peux rajouter/enlever des symboles ici
+// Tu peux modifier ces listes comme tu veux
 const STATIC_SECTORS = {
+  Technologie: [
+    'AAPL',
+    'MSFT',
+    'NVDA',
+    'GOOGL',
+    'META',
+    'AVGO',
+    'ASML',
+    'ADBE',
+    'TSM',
+    'CRM',
+    'INTC',
+    'AMD',
+  ],
+  Finance: [
+    'JPM',
+    'BAC',
+    'GS',
+    'MS',
+    'WFC',
+    'HSBC',
+    'C',
+    'AXP',
+    'SCHW',
+    'BLK',
+  ],
+  Auto: [
+    'TSLA',
+    'F',
+    'GM',
+    'TM',
+    'HMC',
+    'RIVN',
+    'LCID',
+    'STLA',
+    'VWAGY',
+  ],
+  Santé: [
+    'LLY',
+    'JNJ',
+    'PFE',
+    'MRK',
+    'UNH',
+    'ABT',
+    'TMO',
+    'VRTX',
+    'REGN',
+    'BMY',
+  ],
   Crypto: ['BTC-USD', 'ETH-USD', 'SOL-USD', 'DOGE-USD', 'XRP-USD', 'ADA-USD'],
+
+  // Secteur Gamble = actions "casino"
+  // -> plein de titres avec des targetPrice très au-dessus du prix actuel
   Gamble: [
     'SOFI',
     'PLTR',
@@ -37,10 +84,24 @@ const STATIC_SECTORS = {
     'LCID',
     'RBLX',
     'DKNG',
+    'CLOV',
+    'UPST',
   ],
 };
 
-// style visuel pour chaque tuile de secteur
+const ALL_SECTORS = [
+  'Technologie',
+  'Finance',
+  'Auto',
+  'Santé',
+  'Crypto',
+  'Gamble',
+];
+
+// ------------------
+// 2) STYLES PAR SECTEUR
+// ------------------
+
 const SECTOR_STYLES = {
   Technologie: {
     icon: Cpu,
@@ -86,18 +147,20 @@ const SECTOR_STYLES = {
   },
 };
 
-const ALL_SECTORS = ['Technologie', 'Finance', 'Auto', 'Santé', 'Crypto', 'Gamble'];
+// ------------------
+// 3) COMPOSANT
+// ------------------
 
 export default function SectorsTab({ onSelectStock }) {
   const [selectedSector, setSelectedSector] = useState(null);
   const [sectorData, setSectorData] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // filtres (seulement pour les secteurs classiques; Crypto / Gamble sont spéciaux)
+  // Filtres (pour les secteurs sérieux; on les ignore pour Crypto/Gamble si tu veux)
   const [sectorMinMktCap, setSectorMinMktCap] = useState(0);
   const [sectorSortBy, setSectorSortBy] = useState('mktCap'); // mktCap | price | changePercent
 
-  // ---- helpers fetch ----
+  // ---- Helpers fetch via /api/stock (Yahoo) ----
 
   const fetchMultipleStocks = async (symbols) => {
     if (!symbols || symbols.length === 0) return [];
@@ -105,22 +168,22 @@ export default function SectorsTab({ onSelectStock }) {
     const promises = symbols.map((sym) =>
       fetch(`/api/stock?symbol=${encodeURIComponent(sym)}&range=1d`)
         .then((r) => r.json())
-        .catch(() => null)
+        .catch(() => null),
     );
 
     const results = await Promise.all(promises);
     return results.filter((r) => r && !r.error && (r.price || r.price === 0));
   };
 
-  const loadStaticSector = async (sectorKey) => {
+  const loadSector = async (sectorLabel) => {
     setLoading(true);
     try {
-      const symbols = STATIC_SECTORS[sectorKey] || [];
-      const base = await fetchMultipleStocks(symbols);
+      const symbols = STATIC_SECTORS[sectorLabel] || [];
+      const baseData = await fetchMultipleStocks(symbols);
 
-      // pour Gamble, on calcule le potentiel cible (%)
-      if (sectorKey === 'Gamble') {
-        const withUpside = base.map((d) => {
+      if (sectorLabel === 'Gamble') {
+        // Ajoute le "upside" en % pour Gamble
+        const withUpside = baseData.map((d) => {
           let upside = null;
           if (d.targetPrice && d.price) {
             upside = ((d.targetPrice - d.price) / d.price) * 100;
@@ -130,79 +193,38 @@ export default function SectorsTab({ onSelectStock }) {
 
         setSectorData(withUpside);
       } else {
-        setSectorData(base);
+        setSectorData(baseData);
       }
     } catch (e) {
-      console.error('Erreur secteur statique:', e);
+      console.error('Erreur loadSector:', e);
       setSectorData([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const loadFinnhubSector = async (sectorLabel) => {
-    setLoading(true);
-    try {
-      const fhKey = FINNHUB_SECTOR_MAP[sectorLabel] || 'technology';
-
-      const params = new URLSearchParams({
-        sector: fhKey,
-        limit: '80',
-        minMktCap: '0',
-      });
-
-      const res = await fetch(`/api/finnhub-sector?${params.toString()}`);
-      const data = await res.json();
-
-      if (!res.ok) {
-        console.error('Erreur /api/finnhub-sector:', data.error);
-        setSectorData([]);
-        return;
-      }
-
-      const symbols = (data.stocks || []).map((s) => s.symbol);
-      if (symbols.length === 0) {
-        setSectorData([]);
-        return;
-      }
-
-      const enriched = await fetchMultipleStocks(symbols);
-      setSectorData(enriched);
-    } catch (err) {
-      console.error('Erreur sector Finnhub:', err);
-      setSectorData([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // ---- charge les données quand on choisit un secteur ----
-
+  // Charge les données quand on choisit un secteur
   useEffect(() => {
     if (!selectedSector) return;
-
     setSectorData([]);
-
-    if (selectedSector === 'Crypto' || selectedSector === 'Gamble') {
-      loadStaticSector(selectedSector);
-    } else {
-      loadFinnhubSector(selectedSector);
-    }
+    loadSector(selectedSector);
   }, [selectedSector]);
 
-  // ---- filtres & tri (surtout pour secteurs classiques, mais réutilisé pour Gamble aussi) ----
+  // ------------------
+  // 4) FILTRES / TRI
+  // ------------------
 
   const filteredSectorData = useMemo(() => {
     let data = [...sectorData];
 
+    // Pas de filtre cap pour Crypto & Gamble (tu peux activer si tu veux)
     if (selectedSector !== 'Crypto' && selectedSector !== 'Gamble') {
-      // filtre cap boursière pour les secteurs "sérieux"
       if (sectorMinMktCap > 0) {
         data = data.filter((d) => (d.mktCap || 0) >= sectorMinMktCap);
       }
     }
 
-    // pour Gamble tu peux garder tout, mais trier par upside si dispo
+    // Pour Gamble : tri spécial par upside décroissant
     if (selectedSector === 'Gamble') {
       data.sort((a, b) => {
         const upA = a.upside ?? -9999;
@@ -212,7 +234,7 @@ export default function SectorsTab({ onSelectStock }) {
       return data;
     }
 
-    // tri standard
+    // Tri standard
     data.sort((a, b) => {
       if (sectorSortBy === 'mktCap') {
         return (b.mktCap || 0) - (a.mktCap || 0);
@@ -229,9 +251,11 @@ export default function SectorsTab({ onSelectStock }) {
     return data;
   }, [sectorData, sectorMinMktCap, sectorSortBy, selectedSector]);
 
-  // ---- RENDER ----
+  // ------------------
+  // 5) RENDER
+  // ------------------
 
-  // vue liste des secteurs
+  // Vue liste des secteurs
   if (!selectedSector) {
     return (
       <div className="max-w-6xl mx-auto animate-in zoom-in duration-300">
@@ -271,8 +295,8 @@ export default function SectorsTab({ onSelectStock }) {
                   <div className="flex items-center justify-between mt-8">
                     <span className="text-sm font-medium text-slate-500 bg-slate-950/50 px-3 py-1 rounded-full border border-slate-800 group-hover:border-slate-700 transition-colors">
                       {sector === 'Gamble'
-                        ? 'Actions à gros potentiel (et gros risque)'
-                        : 'Actions majeures'}
+                        ? 'Prix cible >> prix actuel (très risqué)'
+                        : 'Actions majeures du secteur'}
                     </span>
                     <div className="w-10 h-10 rounded-full flex items-center justify-center border border-slate-700 text-slate-400 group-hover:bg-white group-hover:text-black transition-all duration-300">
                       <ArrowRight size={18} />
@@ -287,7 +311,7 @@ export default function SectorsTab({ onSelectStock }) {
     );
   }
 
-  // vue détail d'un secteur
+  // Vue détail d’un secteur
   const style = SECTOR_STYLES[selectedSector] || SECTOR_STYLES.Technologie;
   const Icon = style.icon;
 
@@ -309,7 +333,7 @@ export default function SectorsTab({ onSelectStock }) {
         </h2>
       </div>
 
-      {/* Filtres : seulement pour les secteurs classiques, pas Crypto/Gamble */}
+      {/* Filtres uniquement pour les secteurs "classiques" */}
       {selectedSector !== 'Crypto' && selectedSector !== 'Gamble' && (
         <div className="flex flex-wrap gap-4 mb-6 items-center">
           <div className="flex items-center gap-2 text-sm">
@@ -346,6 +370,10 @@ export default function SectorsTab({ onSelectStock }) {
           <RefreshCw className="animate-spin mb-4 text-blue-500" size={32} />
           <div className="text-slate-500">Analyse du secteur...</div>
         </div>
+      ) : filteredSectorData.length === 0 ? (
+        <div className="text-center py-16 text-slate-500 bg-slate-900/60 border border-slate-800 rounded-2xl">
+          Aucune action trouvée (peut-être un souci d&apos;API Yahoo).
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredSectorData.map((d) => {
@@ -360,7 +388,7 @@ export default function SectorsTab({ onSelectStock }) {
                 onClick={() => onSelectStock && onSelectStock(d.symbol)}
                 className="bg-slate-900/50 backdrop-blur border border-slate-800 rounded-xl p-5 cursor-pointer hover:border-blue-500 hover:bg-slate-900 transition-all group flex flex-col justify-between h-32 relative overflow-hidden"
               >
-                <div className="absolute top-0 right-0 w-20 h-20 bg-blue-500/5 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none"></div>
+                <div className="absolute top-0 right-0 w-20 h-20 bg-blue-500/5 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none" />
                 <div className="flex justify-between items-start z-10">
                   <div>
                     <span className="font-bold text-xl text-white group-hover:text-blue-400 transition-colors">
