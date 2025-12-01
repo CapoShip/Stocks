@@ -19,9 +19,9 @@ export async function POST(req) {
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-    // 🔹 modèle gratuit & supporté
+    // 🔹 Modèle texte actuel (remplace 1.5-flash)
     const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
+      model: "gemini-2.5-flash-lite",
       systemInstruction: `
 Tu es un expert en bourse et en analyse fondamentale/technique.
 Tu expliques toujours en français, clairement et pédagogiquement.
@@ -29,12 +29,12 @@ Si l'utilisateur parle d'autre chose que la bourse, réponds normalement en fran
 `.trim(),
     });
 
-    // 🔹 contexte boursier (facultatif mais utile)
+    // 🔹 Contexte boursier optionnel
     const stockContext = data?.stockInfo
       ? `Contexte: action ${data.stockInfo.symbol}, prix ${data.stockInfo.price}$, variation ${data.stockInfo.changePercent}%.`
       : "Aucune action précise n'est sélectionnée pour l'instant.";
 
-    // historique (sans "system")
+    // Historique (sans "system")
     const historyMessages = allMessages.slice(0, -1);
     const lastMessage = allMessages[allMessages.length - 1];
 
@@ -52,7 +52,7 @@ Si l'utilisateur parle d'autre chose que la bourse, réponds normalement en fran
 
     const chat = model.startChat({ history });
 
-    // on ajoute le contexte dans le dernier message
+    // On injecte le contexte dans le message
     const result = await chat.sendMessage(
       stockContext + "\n\nQuestion de l'utilisateur :\n" + userText
     );
@@ -61,7 +61,7 @@ Si l'utilisateur parle d'autre chose que la bourse, réponds normalement en fran
 
     return NextResponse.json({
       text: aiText,
-      id: "gemini-flash-" + Date.now(),
+      id: "gemini-25-flash-lite-" + Date.now(),
       role: "assistant",
     });
   } catch (error) {
