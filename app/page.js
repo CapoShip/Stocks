@@ -38,7 +38,7 @@ import {
   Coins,
 } from 'lucide-react';
 
-// --- CONFIGURATION ---
+// --- CONFIGURATION TEMPS ---
 const TIME_RANGES = {
   '1J': { label: '1J', range: '1d', interval: '5m' },
   '1S': { label: '1S', range: '1wk', interval: '30m' },
@@ -47,11 +47,34 @@ const TIME_RANGES = {
   '1A': { label: '1A', range: '1y', interval: '1wk' },
 };
 
+// --- LISTE D'ACTIONS PAR SECTEUR (élargie) ---
 const MARKET_SECTORS = {
-  Technologie: ['AAPL', 'MSFT', 'NVDA', 'AMD', 'GOOGL', 'META'],
-  Finance: ['JPM', 'BAC', 'V', 'MA', 'GS'],
-  Auto: ['TSLA', 'F', 'GM', 'TM', 'RACE'],
-  Santé: ['JNJ', 'PFE', 'LLY', 'MRK'],
+  Technologie: [
+    'AAPL',
+    'MSFT',
+    'NVDA',
+    'AMD',
+    'AVGO',
+    'GOOGL',
+    'META',
+    'ADBE',
+    'ORCL',
+    'CRM',
+  ],
+  Finance: [
+    'JPM',
+    'BAC',
+    'C',
+    'GS',
+    'MS',
+    'WFC',
+    'V',
+    'MA',
+    'AXP',
+    'BLK',
+  ],
+  Auto: ['TSLA', 'F', 'GM', 'TM', 'HMC', 'RACE', 'STLA', 'VWAGY'],
+  Santé: ['JNJ', 'PFE', 'LLY', 'MRK', 'ABBV', 'TMO', 'UNH'],
   Crypto: ['BTC-USD', 'ETH-USD', 'SOL-USD', 'DOGE-USD'],
 };
 
@@ -91,6 +114,14 @@ const SECTOR_STYLES = {
     border: 'hover:border-purple-500/50',
     gradient: 'from-purple-500/20',
   },
+};
+
+// filtres par défaut pour les secteurs
+const DEFAULT_SECTOR_FILTERS = {
+  sortBy: 'changePercent', // 'price' | 'mktCap' | 'volume' | 'name'
+  sortDir: 'desc',
+  perf: 'all', // 'all' | 'gainers' | 'losers'
+  cap: 'all', // 'all' | 'large' | 'mid' | 'small'
 };
 
 const formatNumber = (num) => {
@@ -153,6 +184,9 @@ export default function StockApp() {
   const [watchlistData, setWatchlistData] = useState([]);
   const [loadingWatchlist, setLoadingWatchlist] = useState(false);
 
+  // 🔥 Filtres secteur façon TradingView
+  const [sectorFilters, setSectorFilters] = useState(DEFAULT_SECTOR_FILTERS);
+
   // Recherche
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestions, setSuggestions] = useState([]);
@@ -207,7 +241,9 @@ export default function StockApp() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `Erreur Serveur HTTP ${response.status}`);
+        throw new Error(
+          errorData.error || `Erreur Serveur HTTP ${response.status}`
+        );
       }
 
       const data = await response.json();
@@ -395,7 +431,7 @@ export default function StockApp() {
     return date.toLocaleDateString([], { day: 'numeric', month: 'short' });
   };
 
-  // 🔥 Haut / Bas de la période affichée (en fonction du timeframe)
+  // 🔥 Haut / Bas de la période affichée
   const { periodHigh, periodLow } = useMemo(() => {
     if (!chartData || chartData.length === 0) {
       return { periodHigh: null, periodLow: null };
@@ -413,6 +449,70 @@ export default function StockApp() {
     return { periodHigh: max, periodLow: min };
   }, [chartData]);
 
+  // 🔥 Filtres secteur (comme TradingView)
+  const filteredSectorData = useMemo(() => {
+    let data = [...sectorData];
+
+    // filtre gagnants/perdants
+    if (sectorFilters.perf === 'gainers') {
+      data = data.filter((d) => d.changePercent > 0);
+    } else if (sectorFilters.perf === 'losers') {
+      data = data.filter((d) => d.changePercent < 0);
+    }
+
+    // filtre par cap boursière
+    const getCap = (d) => d.mktCap || d.mktcap || 0;
+    if (sectorFilters.cap === 'large') {
+      data = data.filter((d) => getCap(d) >= 10e9);
+    } else if (sectorFilters.cap === 'mid') {
+      data = data.filter((d) => getCap(d) >= 2e9 && getCap(d) < 10e9);
+    } else if (sectorFilters.cap === 'small') {
+      data = data.filter((d) => getCap(d) > 0 && getCap(d) < 2e9);
+    }
+
+    // tri
+    const sortKey = sectorFilters.sortBy;
+    data.sort((a, b) => {
+      if (sortKey === 'name') {
+        const av = a.name || '';
+        const bv = b.name || '';
+        return sectorFilters.sortDir === 'asc'
+          ? av.localeCompare(bv)
+          : bv.localeCompare(av);
+      }
+
+      const av =
+        sortKey === 'changePercent'
+          ? a.changePercent ?? 0
+          : sortKey === 'price'
+          ? a.price ?? 0
+          : sortKey === 'mktCap'
+          ? getCap(a)
+          : sortKey === 'volume'
+          ? a.volume ?? 0
+          : 0;
+
+      const bv =
+        sortKey === 'changePercent'
+          ? b.changePercent ?? 0
+          : sortKey === 'price'
+          ? b.price ?? 0
+          : sortKey === 'mktCap'
+          ? getCap(b)
+          : sortKey === 'volume'
+          ? b.volume ?? 0
+          : 0;
+
+      return sectorFilters.sortDir === 'asc' ? av - bv : bv - av;
+    });
+
+    return data;
+  }, [sectorData, sectorFilters]);
+
+  const updateSectorFilter = (key, value) => {
+    setSectorFilters((prev) => ({ ...prev, [key]: value }));
+  };
+
   return (
     <div className="flex h-screen bg-slate-950 text-slate-100 font-sans overflow-hidden">
       {/* Sidebar */}
@@ -427,7 +527,10 @@ export default function StockApp() {
               key={tab}
               onClick={() => {
                 setActiveTab(tab);
-                if (tab === 'sectors') setSelectedSector(null);
+                if (tab === 'sectors') {
+                  setSelectedSector(null);
+                  setSectorFilters(DEFAULT_SECTOR_FILTERS);
+                }
               }}
               className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${
                 activeTab === tab
@@ -512,7 +615,7 @@ export default function StockApp() {
           {/* DASHBOARD */}
           {activeTab === 'dashboard' && stockInfo && (
             <div className="space-y-6 max-w-7xl mx-auto pb-20 animate-in fade-in duration-500">
-              {/* Header */}
+              {/* header titre */}
               <div className="flex flex-col md:flex-row justify-between items-end gap-4">
                 <div>
                   <h1 className="text-3xl font-bold text-white flex items-center gap-3">
@@ -579,9 +682,9 @@ export default function StockApp() {
                 </div>
               </div>
 
-              {/* QUICK STATS basées sur le timeframe */}
+              {/* QUICK STATS */}
               <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-5 gap-3 mt-4">
-                {/* Haut période */}
+                {/* haut */}
                 <div className="bg-slate-900/70 border border-slate-800 rounded-xl p-3 flex flex-col gap-1">
                   <span className="text-xs text-slate-500">
                     {activeRange === '1J'
@@ -592,8 +695,7 @@ export default function StockApp() {
                     {periodHigh !== null ? `$${periodHigh.toFixed(2)}` : '—'}
                   </span>
                 </div>
-
-                {/* Bas période */}
+                {/* bas */}
                 <div className="bg-slate-900/70 border border-slate-800 rounded-xl p-3 flex flex-col gap-1">
                   <span className="text-xs text-slate-500">
                     {activeRange === '1J'
@@ -604,8 +706,7 @@ export default function StockApp() {
                     {periodLow !== null ? `$${periodLow.toFixed(2)}` : '—'}
                   </span>
                 </div>
-
-                {/* Volume */}
+                {/* volume */}
                 <div className="bg-slate-900/70 border border-slate-800 rounded-xl p-3 flex flex-col gap-1">
                   <span className="text-xs text-slate-500">Volume</span>
                   <span className="text-sm font-mono">
@@ -614,8 +715,7 @@ export default function StockApp() {
                       : '—'}
                   </span>
                 </div>
-
-                {/* 52 sem range */}
+                {/* 52w range */}
                 <div className="bg-slate-900/70 border border-slate-800 rounded-xl p-3 flex flex-col gap-1">
                   <span className="text-xs text-slate-500">52 sem. range</span>
                   <span className="text-xs font-mono">
@@ -626,8 +726,7 @@ export default function StockApp() {
                       : '—'}
                   </span>
                 </div>
-
-                {/* Beta */}
+                {/* beta */}
                 <div className="hidden xl:flex bg-slate-900/70 border border-slate-800 rounded-xl p-3 flex-col gap-1">
                   <span className="text-xs text-slate-500">Beta (volatilité)</span>
                   <span className="text-sm font-mono">
@@ -729,7 +828,7 @@ export default function StockApp() {
                 )}
               </div>
 
-              {/* BAS DE PAGE : fondamentaux + news */}
+              {/* FONDAMENTAUX + NEWS */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Fondamentaux */}
                 <div className="bg-slate-900 rounded-2xl p-6 border border-slate-800 h-fit">
@@ -747,7 +846,6 @@ export default function StockApp() {
                           : 'Mixte / Neutre'}
                       </span>
                     </div>
-
                     <div className="flex justify-between pb-2 border-b border-slate-800">
                       <span className="text-slate-400">Cap. Boursière</span>
                       <span className="font-mono">
@@ -807,7 +905,6 @@ export default function StockApp() {
                     <Globe size={18} className="text-blue-400" /> Actualités en
                     direct
                   </h3>
-
                   <div className="space-y-3 flex-1">
                     {news.length > 0 ? (
                       <>
@@ -951,26 +1048,117 @@ export default function StockApp() {
             <div className="max-w-6xl mx-auto animate-in zoom-in duration-300">
               {selectedSector ? (
                 <div>
-                  <div className="flex items-center gap-4 mb-8">
-                    <button
-                      onClick={() => setSelectedSector(null)}
-                      className="flex items-center gap-2 px-4 py-2 rounded-full bg-slate-900 border border-slate-800 text-slate-400 hover:text-white hover:border-blue-500 transition-all"
-                    >
-                      <ArrowLeft size={18} /> Retour
-                    </button>
-                    {(() => {
-                      const style =
-                        SECTOR_STYLES[selectedSector] ||
-                        SECTOR_STYLES['Technologie'];
-                      const Icon = style.icon;
-                      return (
-                        <h2
-                          className={`text-3xl font-bold flex items-center gap-3 ${style.color}`}
+                  <div className="flex flex-wrap items-center gap-4 mb-6 justify-between">
+                    <div className="flex items-center gap-4">
+                      <button
+                        onClick={() => setSelectedSector(null)}
+                        className="flex items-center gap-2 px-4 py-2 rounded-full bg-slate-900 border border-slate-800 text-slate-400 hover:text-white hover:border-blue-500 transition-all"
+                      >
+                        <ArrowLeft size={18} /> Retour
+                      </button>
+                      {(() => {
+                        const style =
+                          SECTOR_STYLES[selectedSector] ||
+                          SECTOR_STYLES['Technologie'];
+                        const Icon = style.icon;
+                        return (
+                          <h2
+                            className={`text-3xl font-bold flex items-center gap-3 ${style.color}`}
+                          >
+                            <Icon size={32} /> {selectedSector}
+                          </h2>
+                        );
+                      })()}
+                    </div>
+
+                    {/* mini résumé */}
+                    <div className="text-xs text-slate-500 bg-slate-900 px-3 py-2 rounded-full border border-slate-800">
+                      {sectorData.length} actions suivies •{' '}
+                      {filteredSectorData.length} visibles avec les filtres
+                    </div>
+                  </div>
+
+                  {/* FILTRES SECTEUR */}
+                  <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 mb-6 flex flex-wrap gap-4 items-center justify-between">
+                    {/* tri */}
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      <span className="text-slate-400 uppercase tracking-wide">
+                        Tri :
+                      </span>
+                      <select
+                        className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-xs outline-none"
+                        value={sectorFilters.sortBy}
+                        onChange={(e) =>
+                          updateSectorFilter('sortBy', e.target.value)
+                        }
+                      >
+                        <option value="changePercent">Performance %</option>
+                        <option value="price">Prix</option>
+                        <option value="mktCap">Cap. boursière</option>
+                        <option value="volume">Volume</option>
+                        <option value="name">Nom</option>
+                      </select>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateSectorFilter(
+                            'sortDir',
+                            sectorFilters.sortDir === 'desc' ? 'asc' : 'desc'
+                          )
+                        }
+                        className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-950 border border-slate-700 text-slate-300 hover:border-slate-500"
+                      >
+                        {sectorFilters.sortDir === 'desc' ? '↓' : '↑'}
+                        {sectorFilters.sortDir === 'desc'
+                          ? 'Desc'
+                          : 'Asc'}
+                      </button>
+                    </div>
+
+                    {/* perf */}
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      <span className="text-slate-400 uppercase tracking-wide">
+                        Performance :
+                      </span>
+                      {[
+                        { key: 'all', label: 'Tous' },
+                        { key: 'gainers', label: 'Gagnants' },
+                        { key: 'losers', label: 'Perdants' },
+                      ].map((b) => (
+                        <button
+                          key={b.key}
+                          type="button"
+                          onClick={() => updateSectorFilter('perf', b.key)}
+                          className={`px-3 py-1 rounded-full border text-xs ${
+                            sectorFilters.perf === b.key
+                              ? 'bg-blue-600 border-blue-600 text-white'
+                              : 'border-slate-700 text-slate-300 hover:border-slate-500'
+                          }`}
                         >
-                          <Icon size={32} /> {selectedSector}
-                        </h2>
-                      );
-                    })()}
+                          {b.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* cap boursière */}
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      <span className="text-slate-400 uppercase tracking-wide">
+                        Cap. :
+                      </span>
+                      <select
+                        className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-xs outline-none"
+                        value={sectorFilters.cap}
+                        onChange={(e) =>
+                          updateSectorFilter('cap', e.target.value)
+                        }
+                      >
+                        <option value="all">Toutes</option>
+                        <option value="large">Large (&gt;= 10B)</option>
+                        <option value="mid">Mid (2B–10B)</option>
+                        <option value="small">Small (&lt; 2B)</option>
+                      </select>
+                    </div>
                   </div>
 
                   {loadingList ? (
@@ -985,14 +1173,14 @@ export default function StockApp() {
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {sectorData.map((d) => (
+                      {filteredSectorData.map((d) => (
                         <div
                           key={d.symbol}
                           onClick={() => {
                             setSelectedStock(d.symbol);
                             setActiveTab('dashboard');
                           }}
-                          className="bg-slate-900/50 backdrop-blur border border-slate-800 rounded-xl p-5 cursor-pointer hover:border-blue-500 hover:bg-slate-900 transition-all group flex flex-col justify-between h-32 relative overflow-hidden"
+                          className="bg-slate-900/50 backdrop-blur border border-slate-800 rounded-xl p-5 cursor-pointer hover:border-blue-500 hover:bg-slate-900 transition-all group flex flex-col justify-between h-36 relative overflow-hidden"
                         >
                           <div className="absolute top-0 right-0 w-20 h-20 bg-blue-500/5 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none" />
                           <div className="flex justify-between items-start z-10">
@@ -1004,17 +1192,23 @@ export default function StockApp() {
                                 {d.name}
                               </div>
                             </div>
-                            <div
-                              className={`px-2 py-1 rounded-lg text-sm font-bold ${
-                                d.change >= 0
-                                  ? 'bg-green-500/10 text-green-400'
-                                  : 'bg-red-500/10 text-red-400'
-                              }`}
-                            >
-                              {formatSigned(d.changePercent)}%
+                            <div className="text-right">
+                              <div
+                                className={`px-2 py-1 rounded-lg text-sm font-bold inline-flex items-center ${
+                                  d.changePercent >= 0
+                                    ? 'bg-green-500/10 text-green-400'
+                                    : 'bg-red-500/10 text-red-400'
+                                }`}
+                              >
+                                {d.changePercent >= 0 ? '↑' : '↓'}{' '}
+                                {formatSigned(d.changePercent)}%
+                              </div>
+                              <div className="text-[10px] text-slate-500 mt-1">
+                                Vol: {d.volume ? d.volume.toLocaleString() : '—'}
+                              </div>
                             </div>
                           </div>
-                          <div className="flex justify-between items-end z-10">
+                          <div className="flex justify-between items-end z-10 mt-4">
                             <div className="text-2xl font-bold tracking-tight">
                               ${d.price?.toFixed(2)}
                             </div>
@@ -1046,7 +1240,10 @@ export default function StockApp() {
                       return (
                         <div
                           key={sector}
-                          onClick={() => setSelectedSector(sector)}
+                          onClick={() => {
+                            setSelectedSector(sector);
+                            setSectorFilters(DEFAULT_SECTOR_FILTERS);
+                          }}
                           className={`relative overflow-hidden bg-slate-900 border border-slate-800 rounded-3xl p-6 cursor-pointer group transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl ${style.border}`}
                         >
                           <div
@@ -1061,9 +1258,12 @@ export default function StockApp() {
                             <h3 className="text-2xl font-bold text-white mb-2 group-hover:text-white/90">
                               {sector}
                             </h3>
+                            <p className="text-sm text-slate-500">
+                              {stocks.length} principaux tickers suivis.
+                            </p>
                             <div className="flex items-center justify-between mt-8">
                               <span className="text-sm font-medium text-slate-500 bg-slate-950/50 px-3 py-1 rounded-full border border-slate-800 group-hover:border-slate-700 transition-colors">
-                                {stocks.length} actifs
+                                Cliquer pour voir les actions
                               </span>
                               <div className="w-10 h-10 rounded-full flex items-center justify-center border border-slate-700 text-slate-400 group-hover:bg-white group-hover:text-black transition-all duration-300">
                                 <ArrowRight size={18} />
