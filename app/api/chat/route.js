@@ -1,76 +1,58 @@
-import { groq } from '@ai-sdk/groq';
-import { generateText } from 'ai';
-import { NextResponse } from 'next/server';
+import { NextResponse } from "next/server";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export const maxDuration = 30;
 
 export async function POST(req) {
-  if (!process.env.GROQ_API_KEY) {
-    return new Response(
-      JSON.stringify({ error: "Clé Groq manquante" }),
-      { status: 500 }
-    );
-  }
-
-  let messages = [];
-  let data = {};
-
   try {
     const body = await req.json();
 
-    // On sécurise : messages DOIT être un tableau
-    messages = Array.isArray(body?.messages) ? body.messages : [];
-    // data doit être un objet
-    data = body?.data && typeof body.data === 'object' ? body.data : {};
-  } catch (e) {
-    return new Response(
-      JSON.stringify({ error: "Requête mal formée (JSON invalide ou corps vide)" }),
-      { status: 400 }
-    );
-  }
+    const messages = Array.isArray(body?.messages) ? body.messages : [];
+    const data = body?.data || {};
 
-  try {
-    const contextStock = data.stockInfo
-      ? `Action ${data.stockInfo.symbol} à ${data.stockInfo.price}$. Variation: ${data.stockInfo.changePercent}%`
-      : "Pas d'action spécifique fournie.";
+    if (!process.env.GEMINI_API_KEY) {
+      return NextResponse.json({ error: "Clé Gemini manquante" }, { status: 500 });
+    }
 
-    const systemInstruction = `
-Tu es un expert en bourse et en analyse d'actions.
-CONTEXTE MARCHÉ: ${contextStock}
-Réponds toujours en français, de façon claire, structurée et pédagogique.
-Si l'utilisateur ne parle pas de bourse, réponds normalement en français.
-`.trim();
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({
+      model: "gemini-1.5-flash",  // ⭐ GRATUIT
+    });
 
-    // On convertit nous-mêmes l'historique → format attendu par ai-sdk
-    const history = messages
-      .filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
-      .map(m => ({
-        role: m.role,
-        content: m.content,
-      }));
+    // Contexte si une action est en cours
+    const context = data?.stockInfo
+      ? `Analyse actuelle : ${data.stockInfo.symbol}, prix ${data.stockInfo.price} USD, variation ${data.stockInfo.changePercent}%`
+      : "Aucune action sélectionnée.";
 
-    const finalMessages = [
-      { role: 'system', content: systemInstruction },
-      ...history,
-    ];
+    // Reconstruction de l'historique
+    const history = messages.map(m => ({
+      role: m.role,
+      parts: [{ text: m.content }]
+    }));
 
-  const response = await generateText({
-  model: groq('llama-3.3-70b-versatile'),
-  messages: finalMessages,
-  });
+    const chat = model.startChat({
+      history: [
+        {
+          role: "system",
+          parts: [{ text: `Tu es un expert en bourse. Toujours répondre en français. ${context}` }]
+        },
+        ...history,
+      ],
+    });
 
+    const userMessage = body.messages[body.messages.length - 1]?.content || "";
+
+    const response = await chat.sendMessage(userMessage);
+
+    const aiText = response.response.text();
 
     return NextResponse.json({
-      text: response.text,
-      id: response.id || 'ai-response',
-      role: 'assistant',
+      text: aiText,
+      id: "gemini-" + Date.now(),
     });
 
   } catch (error) {
-    console.error("ERREUR CRITIQUE [API CHAT / GROQ]:", error);
-    return new Response(
-      JSON.stringify({ error: error.message || "Erreur inconnue de l'API" }),
-      { status: 500 }
-    );
+    console.error("Erreur Gemini:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
