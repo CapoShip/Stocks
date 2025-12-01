@@ -39,7 +39,7 @@ function isFinanceQuestion(text, data) {
 }
 
 function buildStyleInstruction(mode) {
-  switch (mode) {
+  switch ((mode || '').toLowerCase()) {
     case 'yt':
     case 'youtubeur':
       return "Parle comme un YouTubeur finance énergique, en tutoyant, avec des exemples concrets et un ton dynamique.";
@@ -91,9 +91,9 @@ export async function POST(req) {
       text:
         "Je suis spécialisé uniquement sur les actions, cryptos, ETF et marchés financiers.\n\n" +
         "Pose-moi une question BOURSE, par exemple :\n" +
-        "• \"Que penses-tu de APLD à court terme ?\"\n" +
-        "• \"Cette action est-elle chère par rapport à ses bénéfices ?\"\n" +
-        "• \"Comment diversifier mon portefeuille ?\"",
+        "• « Que penses-tu de APLD à court terme ? »\n" +
+        "• « Cette action est-elle chère par rapport à ses bénéfices ? »\n" +
+        "• « Comment diversifier mon portefeuille ? »",
       id: 'not-finance',
       role: 'assistant',
     });
@@ -124,14 +124,8 @@ ${contextStock}
   try {
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// modèle rapide + pas cher
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
-
-// si jamais ça donne encore 404, essaie à la place :
-// const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
-// ou en dernier recours (très ancien mais compatible) :
-// const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-
+    // IMPORTANT : modèle compatible avec ton SDK / v1beta
+    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
     // On envoie : 1) le "pseudo-system" en premier, 2) tout l'historique.
     const contents = [
