@@ -3,11 +3,20 @@ import { NextResponse } from 'next/server';
 
 const FINNHUB_BASE = 'https://finnhub.io/api/v1';
 
+// Fallback en cas de résultat vide (ou limite API) :
+// ça garantit qu'on ait TOUJOURS quelques grosses actions par secteur.
+const FALLBACK_SECTORS = {
+  technology: ['AAPL', 'MSFT', 'NVDA', 'AMD', 'AVGO', 'META', 'GOOGL'],
+  finance: ['JPM', 'BAC', 'GS', 'MS', 'C', 'WFC', 'BLK'],
+  healthcare: ['UNH', 'JNJ', 'PFE', 'MRK', 'LLY', 'ABBV'],
+  auto: ['TSLA', 'F', 'GM', 'TM', 'HMC', 'STLA'],
+};
+
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
-  const sector = searchParams.get('sector');        // ex: "technology", "finance", "healthcare", "auto"
-  const limit = parseInt(searchParams.get('limit') || '80', 10);       // nombre max d'actions renvoyées
-  const minMktCap = parseFloat(searchParams.get('minMktCap') || '0');  // en millions (Finnhub renvoie en millions)
+  const sector = searchParams.get('sector'); // ex: "technology", "finance"
+  const limit = parseInt(searchParams.get('limit') || '80', 10);
+  const minMktCap = parseFloat(searchParams.get('minMktCap') || '0'); // (en millions, mais on filtrera surtout côté front)
 
   const apiKey = process.env.FINNHUB_API_KEY;
 
@@ -26,7 +35,7 @@ export async function GET(request) {
   }
 
   try {
-    // 1) Récupère tous les symboles US
+    // 1) Récupère les symboles US
     const symbolsRes = await fetch(
       `${FINNHUB_BASE}/stock/symbol?exchange=US&token=${apiKey}`,
       { cache: 'no-store' }
@@ -49,7 +58,7 @@ export async function GET(request) {
     const sliceSize = Math.min(commonStocks.length, 400);
     const subset = commonStocks.slice(0, sliceSize);
 
-    // 2) Pour chaque symbole on récupère le profil (industry + market cap)
+    // 2) On récupère le profil pour chaque symbole (industry + market cap)
     const profilePromises = subset.map(async (s) => {
       try {
         const profRes = await fetch(
@@ -61,15 +70,15 @@ export async function GET(request) {
         if (!profRes.ok) return null;
         const profile = await profRes.json();
 
-        const industry = profile.finnhubIndustry || 'N/A';
-        const marketCap = profile.marketCapitalization || 0; // en millions
+        const industry = profile.finnhubIndustry || profile.industry || 'N/A';
+        const marketCap = profile.marketCapitalization || 0; // Finnhub = en millions
 
         return {
           symbol: s.symbol,
           name: profile.name || s.description || s.symbol,
           exchange: profile.exchange || s.exchange,
           industry,
-          marketCap
+          marketCap,
         };
       } catch {
         return null;
@@ -81,41 +90,100 @@ export async function GET(request) {
 
     const target = sector.toLowerCase();
 
-    // 3) Filtre par "sector" demandé + market cap minimum
+    // 3) Filtre par secteur demandé (+ cap mini Finnhub si tu veux l’utiliser)
     const selected = profiles
       .filter((p) => {
         const ind = (p.industry || '').toLowerCase();
 
-        const match =
-          ind.includes(target) ||
-          // quelques mappings souples
-          (target === 'technology' &&
-            (ind.includes('technology') ||
-              ind.includes('semiconductor') ||
-              ind.includes('software'))) ||
-          (target === 'finance' &&
-            (ind.includes('financial') ||
-              ind.includes('bank') ||
-              ind.includes('insurance'))) ||
-          (target === 'healthcare' &&
-            (ind.includes('health') || ind.includes('pharmaceutical'))) ||
-          (target === 'auto' &&
-            (ind.includes('automobile') ||
-              ind.includes('auto') ||
-              ind.includes('vehicle')));
+        // mapping large pour bien choper les secteurs
+        const isTech =
+          ind.includes('tech') ||
+          ind.includes('software') ||
+          ind.includes('semiconductor') ||
+          ind.includes('communication equipment');
 
-        return match && p.marketCap >= minMktCap;
+        const isFin =
+          ind.includes('financial') ||
+          ind.includes('bank') ||
+          ind.includes('insurance') ||
+          ind.includes('capital markets') ||
+          ind.includes('credit services');
+
+        const isHealth =
+          ind.includes('health') ||
+          ind.includes('healthcare') ||
+          ind.includes('biotechnology') ||
+          ind.includes('drug manufacturers') ||
+          ind.includes('pharmaceutical');
+
+        const isAuto =
+          ind.includes('automobile') ||
+          ind.includes('auto') ||
+          ind.includes('vehicle') ||
+          ind.includes('auto manufacturers');
+
+        let match = false;
+
+        if (target === 'technology') match = isTech;
+        else if (target === 'finance') match = isFin;
+        else if (target === 'healthcare') match = isHealth;
+        else if (target === 'auto') match = isAuto;
+        else match = ind.includes(target); // fallback générique
+
+        // petit filtrage sur marketCap Finnhub (en millions)
+        const capOk =
+          !Number.isFinite(minMktCap) ||
+          minMktCap <= 0 ||
+          (p.marketCap || 0) >= minMktCap;
+
+        return match && capOk;
       })
-      .sort((a, b) => b.marketCap - a.marketCap) // plus grosse cap en premier
+      .sort((a, b) => (b.marketCap || 0) - (a.marketCap || 0))
       .slice(0, limit);
 
+    let finalStocks = selected;
+
+    // 4) Si aucun résultat (ou problème API / mapping), on bascule sur le fallback
+    if (finalStocks.length === 0) {
+      const fallbackSymbols = FALLBACK_SECTORS[target] || [];
+      finalStocks = fallbackSymbols.slice(0, limit).map((sym) => ({
+        symbol: sym,
+        name: sym,
+        exchange: 'US',
+        industry: target,
+        marketCap: 0,
+      }));
+    }
+
     return NextResponse.json({
-      sector,
-      count: selected.length,
-      stocks: selected
+      sector: target,
+      count: finalStocks.length,
+      stocks: finalStocks,
     });
   } catch (err) {
     console.error('Erreur Finnhub sector:', err);
+
+    // En cas d’erreur totale Finnhub, on renvoie directement les fallbacks
+    const target = (sector || '').toLowerCase();
+    const fallbackSymbols = FALLBACK_SECTORS[target] || [];
+
+    if (fallbackSymbols.length > 0) {
+      const fallbackStocks = fallbackSymbols.map((sym) => ({
+        symbol: sym,
+        name: sym,
+        exchange: 'US',
+        industry: target,
+        marketCap: 0,
+      }));
+
+      return NextResponse.json({
+        sector: target,
+        count: fallbackStocks.length,
+        stocks: fallbackStocks,
+        warning: 'Résultats basés sur une liste statique (fallback), Finnhub indisponible.',
+      });
+    }
+
     return NextResponse.json(
       { error: err.message || 'Erreur interne Finnhub' },
       { status: 500 }

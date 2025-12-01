@@ -4,7 +4,6 @@ import React, {
   useState,
   useEffect,
   useRef,
-  useMemo,
 } from 'react';
 
 import Sidebar from '@/components/layout/Sidebar';
@@ -25,21 +24,13 @@ const TIME_RANGES = {
   '1A': { label: '1A', range: '1y', interval: '1wk' },
 };
 
-const MARKET_SECTORS = {
-  Crypto: ['BTC-USD', 'ETH-USD', 'SOL-USD', 'DOGE-USD', 'XRP-USD', 'ADA-USD'],
-};
-
-const FINNHUB_SECTOR_MAP = {
-  Technologie: 'technology',
-  Finance: 'finance',
-  Auto: 'auto',
-  Santé: 'healthcare',
-};
-
 export default function StockApp() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [selectedStock, setSelectedStock] = useState('NVDA');
   const [watchlist, setWatchlist] = useState(['AAPL', 'NVDA', 'TSLA', 'AMZN']);
+
+  // pour Sidebar uniquement (SectorsTab gère son propre état interne)
+  const [selectedSector, setSelectedSector] = useState(null);
 
   // Dashboard
   const [activeRange, setActiveRange] = useState('1M');
@@ -54,15 +45,9 @@ export default function StockApp() {
   const [rangeLow, setRangeLow] = useState(null);
   const [volumeTotal, setVolumeTotal] = useState(null);
 
-  // Watchlist & Secteurs
-  const [sectorData, setSectorData] = useState([]);
-  const [selectedSector, setSelectedSector] = useState(null);
-  const [loadingList, setLoadingList] = useState(false);
+  // Watchlist
   const [watchlistData, setWatchlistData] = useState([]);
   const [loadingWatchlist, setLoadingWatchlist] = useState(false);
-
-  const [sectorMinMktCap, setSectorMinMktCap] = useState(0);
-  const [sectorSortBy, setSectorSortBy] = useState('mktCap');
 
   // Search
   const [searchQuery, setSearchQuery] = useState('');
@@ -302,109 +287,6 @@ export default function StockApp() {
     }
   }, [activeTab, watchlist]);
 
-  // --- SECTORS ---
-
-  const fetchMultipleStocks = async (symbols, targetSetter) => {
-    if (!symbols || symbols.length === 0) {
-      targetSetter([]);
-      return;
-    }
-
-    const promises = symbols.map((sym) =>
-      fetch(`/api/stock?symbol=${encodeURIComponent(sym)}&range=1d`)
-        .then((r) => r.json())
-        .catch(() => null)
-    );
-
-    const results = await Promise.all(promises);
-    const validResults = results.filter(
-      (r) => r && !r.error && (r.price || r.price === 0)
-    );
-    targetSetter(validResults);
-  };
-
-  const loadSectorFromFinnhub = async (sectorLabel) => {
-    setLoadingList(true);
-    try {
-      const fhKey = FINNHUB_SECTOR_MAP[sectorLabel] || 'technology';
-
-      const params = new URLSearchParams({
-        sector: fhKey,
-        limit: '80',
-        minMktCap: '0',
-      });
-
-      const res = await fetch(`/api/finnhub-sector?${params.toString()}`);
-      const data = await res.json();
-
-      if (!res.ok) {
-        console.error('Erreur /api/finnhub-sector:', data.error);
-        setSectorData([]);
-        return;
-      }
-
-      const symbols = (data.stocks || []).map((s) => s.symbol);
-
-      if (symbols.length === 0) {
-        setSectorData([]);
-        return;
-      }
-
-      const promises = symbols.map((sym) =>
-        fetch(`/api/stock?symbol=${encodeURIComponent(sym)}&range=1d`)
-          .then((r) => r.json())
-          .catch(() => null)
-      );
-
-      const details = await Promise.all(promises);
-
-      const enriched = details
-        .map((d) => (d && !d.error ? d : null))
-        .filter(Boolean);
-
-      setSectorData(enriched);
-    } catch (err) {
-      console.error('Erreur sector Finnhub:', err);
-      setSectorData([]);
-    } finally {
-      setLoadingList(false);
-    }
-  };
-
-  useEffect(() => {
-    if (activeTab === 'sectors' && selectedSector) {
-      if (selectedSector === 'Crypto') {
-        fetchMultipleStocks(MARKET_SECTORS.Crypto, setSectorData);
-      } else {
-        loadSectorFromFinnhub(selectedSector);
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSector, activeTab]);
-
-  const filteredSectorData = useMemo(() => {
-    let data = [...sectorData];
-
-    if (sectorMinMktCap > 0) {
-      data = data.filter((d) => (d.mktCap || 0) >= sectorMinMktCap);
-    }
-
-    data.sort((a, b) => {
-      if (sectorSortBy === 'mktCap') {
-        return (b.mktCap || 0) - (a.mktCap || 0);
-      }
-      if (sectorSortBy === 'changePercent') {
-        return (b.changePercent || 0) - (a.changePercent || 0);
-      }
-      if (sectorSortBy === 'price') {
-        return (b.price || 0) - (a.price || 0);
-      }
-      return 0;
-    });
-
-    return data;
-  }, [sectorData, sectorMinMktCap, sectorSortBy]);
-
   // --- COMPARE ---
 
   const fetchCompareData = async () => {
@@ -436,7 +318,7 @@ export default function StockApp() {
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        setSelectedSector={setSelectedSector}
+        setSelectedSector={setSelectedSector} // peut juste faire setSelectedSector(null) quand on clique sur "Secteurs"
       />
 
       <div className="flex-1 flex flex-col overflow-hidden relative">
@@ -488,16 +370,10 @@ export default function StockApp() {
 
           {activeTab === 'sectors' && (
             <SectorsTab
-              selectedSector={selectedSector}
-              setSelectedSector={setSelectedSector}
-              loadingList={loadingList}
-              filteredSectorData={filteredSectorData}
-              sectorMinMktCap={sectorMinMktCap}
-              setSectorMinMktCap={setSectorMinMktCap}
-              sectorSortBy={sectorSortBy}
-              setSectorSortBy={setSectorSortBy}
-              setSelectedStock={setSelectedStock}
-              setActiveTab={setActiveTab}
+              onSelectStock={(sym) => {
+                setSelectedStock(sym);
+                setActiveTab('dashboard');
+              }}
             />
           )}
 
