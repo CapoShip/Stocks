@@ -46,12 +46,47 @@ const CRYPTO_TICKERS = [
   'DOGE-USD',
   'XRP-USD',
   'ADA-USD',
-  'AVAX-USD',
-  'LINK-USD',
 ];
 
-// Tous les secteurs visibles
 const ALL_SECTORS = ['Technologie', 'Finance', 'Auto', 'Santé', 'Crypto', 'Gamble'];
+
+// ---------- Fallbacks (si /api/all-tickers foire) ----------
+
+const FALLBACK_SECTOR_TICKERS = {
+  Technologie: [
+    'AAPL', 'MSFT', 'NVDA', 'AMD', 'AVGO', 'META', 'GOOGL', 'AMZN', 'ADBE',
+    'TSM', 'CRM', 'SNOW', 'INTC', 'PLTR',
+  ],
+  Finance: [
+    'JPM', 'BAC', 'GS', 'MS', 'WFC', 'BLK', 'MA', 'V', 'COIN', 'HOOD',
+    'SOFI', 'UPST', 'AFRM', 'SQ', 'PYPL',
+  ],
+  Auto: [
+    'TSLA', 'F', 'GM', 'RIVN', 'LCID', 'NIO', 'TM', 'HMC', 'XPEV',
+  ],
+  Santé: [
+    'UNH', 'LLY', 'PFE', 'MRNA', 'VRTX', 'JNJ', 'ISRG', 'REGN', 'BMY',
+  ],
+};
+
+// tickers "risqués" pour Gamble (fallback + universe de base)
+const GAMBLE_CANDIDATES = [
+  'MARA',
+  'RBLX',
+  'COIN',
+  'LCID',
+  'DKNG',
+  'AFRM',
+  'CLOV',
+  'UPST',
+  'HOOD',
+  'PLTR',
+  'SOFI',
+  'RIVN',
+  'DNA',
+  'RIOT',
+  'IONQ',
+];
 
 // Styles par secteur
 const SECTOR_STYLES = {
@@ -161,7 +196,6 @@ export default function SectorsTab({ onSelectStock }) {
   // --------- /api/all-tickers : renvoie la LISTE directement ---------
 
   const fetchAllTickers = async () => {
-    // si déjà chargés -> on réutilise
     if (allTickers.length > 0) return allTickers;
 
     setAllTickersLoading(true);
@@ -171,19 +205,31 @@ export default function SectorsTab({ onSelectStock }) {
       const res = await fetch('/api/all-tickers?count=5000');
       const data = await res.json();
 
-      // on accepte plusieurs formats possibles
       let list = [];
       if (Array.isArray(data.tickers)) list = data.tickers;
       else if (Array.isArray(data.symbols)) list = data.symbols;
       else if (Array.isArray(data)) list = data;
+
+      // si l’API renvoie rien → on renvoie au moins tous les tickers de fallback
+      if (!list || list.length === 0) {
+        const set = new Set(
+          Object.values(FALLBACK_SECTOR_TICKERS).flat().concat(GAMBLE_CANDIDATES)
+        );
+        list = Array.from(set);
+      }
 
       setAllTickers(list);
       return list;
     } catch (e) {
       console.error('Erreur /api/all-tickers:', e);
       setAllTickersError(e.message || 'Erreur all-tickers');
-      setAllTickers([]);
-      return [];
+
+      const set = new Set(
+        Object.values(FALLBACK_SECTOR_TICKERS).flat().concat(GAMBLE_CANDIDATES)
+      );
+      const list = Array.from(set);
+      setAllTickers(list);
+      return list;
     } finally {
       setAllTickersLoading(false);
     }
@@ -218,17 +264,20 @@ export default function SectorsTab({ onSelectStock }) {
     return result;
   };
 
-  // --------- Secteurs classiques via ALL TICKERS ----------
+  // --------- Secteurs classiques via ALL TICKERS + fallback ----------
 
   const loadSectorFromAllTickers = async (label) => {
     setLoading(true);
     setSectorData([]);
 
     try {
-      const symbols = await fetchAllTickers();   // ✅ récupère la vraie liste
+      const symbols = await fetchAllTickers();
+
+      // si liste globale vide => on tombe sur le fallback direct
       if (!symbols || symbols.length === 0) {
-        setSectorData([]);
-        setLoading(false);
+        const fallback = FALLBACK_SECTOR_TICKERS[label] || [];
+        const data = await fetchMultipleStocks(fallback);
+        setSectorData(data);
         return;
       }
 
@@ -254,10 +303,19 @@ export default function SectorsTab({ onSelectStock }) {
         });
       }
 
-      setSectorData(collected);
+      // si l’algorithme auto ne trouve rien → fallback sur la liste fixe
+      if (collected.length === 0) {
+        const fallback = FALLBACK_SECTOR_TICKERS[label] || [];
+        const data = await fetchMultipleStocks(fallback);
+        setSectorData(data);
+      } else {
+        setSectorData(collected);
+      }
     } catch (e) {
       console.error('Erreur loadSectorFromAllTickers:', e);
-      setSectorData([]);
+      const fallback = FALLBACK_SECTOR_TICKERS[label] || [];
+      const data = await fetchMultipleStocks(fallback);
+      setSectorData(data);
     } finally {
       setLoading(false);
     }
@@ -279,19 +337,18 @@ export default function SectorsTab({ onSelectStock }) {
     }
   };
 
-  // --------- Gamble : ALL TICKERS + upside >= MIN_GAMBLE_UPSIDE ----------
+  // --------- Gamble : ALL TICKERS + upside >= MIN_GAMBLE_UPSIDE + fallback ----------
 
   const loadGamble = async () => {
     setLoading(true);
     setSectorData([]);
 
     try {
-      const symbols = await fetchAllTickers();   // ✅ récupère la vraie liste
-      if (!symbols || symbols.length === 0) {
-        setSectorData([]);
-        setLoading(false);
-        return;
-      }
+      const symbolsGlobal = await fetchAllTickers();
+      const symbols =
+        symbolsGlobal && symbolsGlobal.length > 0
+          ? symbolsGlobal
+          : GAMBLE_CANDIDATES;
 
       const BATCH_SIZE = 40;
       const collected = [];
@@ -320,7 +377,23 @@ export default function SectorsTab({ onSelectStock }) {
       }
 
       collected.sort((a, b) => (b.upside || 0) - (a.upside || 0));
-      setSectorData(collected.slice(0, MAX_GAMBLE_RESULTS));
+
+      if (collected.length === 0) {
+        // si vraiment rien >= 100% → on montre quand même les candidats avec leur upside
+        const data = await fetchMultipleStocks(GAMBLE_CANDIDATES);
+        const withUpside = data
+          .map((d) => {
+            if (!d.price || !d.targetPrice || d.targetPrice <= d.price)
+              return null;
+            const upside = ((d.targetPrice - d.price) / d.price) * 100;
+            return { ...d, upside };
+          })
+          .filter(Boolean)
+          .sort((a, b) => (b.upside || 0) - (a.upside || 0));
+        setSectorData(withUpside.slice(0, MAX_GAMBLE_RESULTS));
+      } else {
+        setSectorData(collected.slice(0, MAX_GAMBLE_RESULTS));
+      }
     } catch (e) {
       console.error('Erreur loadGamble:', e);
       setSectorData([]);
@@ -379,7 +452,7 @@ export default function SectorsTab({ onSelectStock }) {
 
   // ==================== RENDER ====================
 
-  // Liste des secteurs
+  // Vue liste de secteurs
   if (!selectedSector) {
     return (
       <div className="max-w-6xl mx-auto animate-in zoom-in duration-300">
@@ -433,7 +506,7 @@ export default function SectorsTab({ onSelectStock }) {
                         ? 'Actions avec prix cible beaucoup plus haut que le prix actuel'
                         : sector === 'Crypto'
                         ? 'Principales cryptos spot'
-                        : 'Actions du secteur (scan Yahoo complet)'}
+                        : 'Actions du secteur (scan + fallback)'}
                     </span>
                     <div className="w-10 h-10 rounded-full flex items-center justify-center border border-slate-700 text-slate-400 group-hover:bg-white group-hover:text-black transition-all duration-300">
                       <ArrowRight size={18} />
@@ -448,7 +521,7 @@ export default function SectorsTab({ onSelectStock }) {
     );
   }
 
-  // Détail d'un secteur
+  // Vue détail d'un secteur
 
   const style = SECTOR_STYLES[selectedSector] || SECTOR_STYLES.Technologie;
   const Icon = style.icon;
