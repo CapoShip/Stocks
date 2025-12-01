@@ -1,53 +1,75 @@
-import { groq } from '@ai-sdk/groq'; 
-import { generateText, convertToCoreMessages } from 'ai'; 
+import { groq } from '@ai-sdk/groq';
+import { generateText } from 'ai';
 import { NextResponse } from 'next/server';
 
 export const maxDuration = 30;
 
 export async function POST(req) {
   if (!process.env.GROQ_API_KEY) {
-    return new Response(JSON.stringify({ error: "Clé Groq manquante" }), { status: 500 });
+    return new Response(
+      JSON.stringify({ error: "Clé Groq manquante" }),
+      { status: 500 }
+    );
   }
 
-  let messages = []; // 🛑 INITIALISATION DE SECURITE #1
-  let data = {};     // Initialisation de l'objet de données
-  let body;
+  let messages = [];
+  let data = {};
 
   try {
-    // 1. Lecture du corps de la requête
-    body = await req.json();
-    
-    // 2. Assignation des valeurs, avec protection contre null/undefined
-    messages = body.messages || []; // 🛑 PROTECTION FINALE
-    data = body.data || {};
+    const body = await req.json();
 
+    // On sécurise : messages DOIT être un tableau
+    messages = Array.isArray(body?.messages) ? body.messages : [];
+    // data doit être un objet
+    data = body?.data && typeof body.data === 'object' ? body.data : {};
   } catch (e) {
-    // Si le JSON est mal formé ou vide (client envoie un corps bizarre)
-    return new Response(JSON.stringify({ error: "Requête mal formée (Le corps JSON est invalide)" }), { status: 400 });
+    return new Response(
+      JSON.stringify({ error: "Requête mal formée (JSON invalide ou corps vide)" }),
+      { status: 400 }
+    );
   }
 
   try {
-    // Assigner les données du contexte (maintenant que nous sommes sûrs que 'data' est un objet)
-    const contextStock = data.stockInfo ? `Action ${data.stockInfo.symbol} à ${data.stockInfo.price}$.` : "Pas d'action.";
+    const contextStock = data.stockInfo
+      ? `Action ${data.stockInfo.symbol} à ${data.stockInfo.price}$. Variation: ${data.stockInfo.changePercent}%`
+      : "Pas d'action spécifique fournie.";
 
-    const systemInstruction = `Tu es un expert en bourse. CONTEXTE: ${contextStock} Réponds en français.`;
+    const systemInstruction = `
+Tu es un expert en bourse et en analyse d'actions.
+CONTEXTE MARCHÉ: ${contextStock}
+Réponds toujours en français, de façon claire, structurée et pédagogique.
+Si l'utilisateur ne parle pas de bourse, réponds normalement en français.
+`.trim();
 
-    const history = convertToCoreMessages(messages); // Utilisation de l'array garanti
-    const finalMessages = [{ role: 'system', content: systemInstruction }, ...history];
-    
+    // On convertit nous-mêmes l'historique → format attendu par ai-sdk
+    const history = messages
+      .filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+      .map(m => ({
+        role: m.role,
+        content: m.content,
+      }));
+
+    const finalMessages = [
+      { role: 'system', content: systemInstruction },
+      ...history,
+    ];
+
     const response = await generateText({
-      model: groq('llama2-70b-4096'), 
+      model: groq('llama2-70b-4096'),
       messages: finalMessages,
     });
 
-    return NextResponse.json({ 
-        text: response.text, 
-        id: response.id || 'ai-response',
-        role: 'assistant'
+    return NextResponse.json({
+      text: response.text,
+      id: response.id || 'ai-response',
+      role: 'assistant',
     });
 
   } catch (error) {
-    console.error("ERREUR CRITIQUE [MAP CRASH]:", error);
-    return new Response(JSON.stringify({ error: error.message || "Erreur inconnue" }), { status: 500 });
+    console.error("ERREUR CRITIQUE [API CHAT / GROQ]:", error);
+    return new Response(
+      JSON.stringify({ error: error.message || "Erreur inconnue de l'API" }),
+      { status: 500 }
+    );
   }
 }
