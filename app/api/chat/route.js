@@ -1,137 +1,155 @@
-import { NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { NextResponse } from 'next/server';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export const maxDuration = 30;
 
-// 🔹 Règle générale : spécialisé bourse uniquement
-const BASE_PROMPT = `
-Tu es un assistant spécialisé EXCLUSIVEMENT en bourse, marchés financiers et investissement.
+// -------- Helpers --------
+function isFinanceQuestion(text, data) {
+  if (!text || typeof text !== 'string') {
+    return !!(data && data.stockInfo);
+  }
 
-TU DOIS :
-- Répondre uniquement si la question a un lien clair avec :
-  - actions, indices, ETF, obligations, crypto,
-  - entreprises cotées, résultats financiers,
-  - analyse fondamentale ou technique,
-  - gestion de portefeuille, risques, macroéconomie liée aux marchés.
-- Adapter ton style et ta structure à la question posée :
-  - si c'est une définition → réponse courte et claire,
-  - si c'est une analyse d'une action précise → réponse plus détaillée,
-  - si c'est une stratégie → expliquer étapes / avantages / risques.
-- Utiliser un français naturel, moderne, clair.
-- Éviter de répéter les mêmes phrases d’une réponse à l’autre.
-- Utiliser des listes à puces seulement quand c’est utile, pas systématiquement.
-- Aller droit au but, pas de blabla inutile.
+  const lower = text.toLowerCase();
 
-INTERDICTION :
-- Si la question n’a pas de rapport avec la bourse, les marchés ou l’investissement,
-  tu NE DOIS PAS répondre normalement.
-  Tu réponds UNIQUEMENT cette phrase courte (sans rien ajouter d’autre) :
-  "Je suis spécialisé en bourse. Pose-moi une question liée aux actions ou aux marchés financiers."
-`.trim();
+  // Mots-clés finance / bourse
+  const financeKeywords = [
+    'bourse', 'boursier', 'boursière', 'action', 'actions',
+    'stock', 'stocks', 'marché', 'marchés', 'marches',
+    'investir', 'investissement', 'investisseur', 'trading', 'trader',
+    'dividende', 'dividendes', 'portefeuille', 'etf', 'indice', 'indices',
+    'nasdaq', 'nyse', 'dow jones', 's&p', 'sp500',
+    'call', 'put', 'option', 'options',
+    'crypto', 'bitcoin', 'ethereum', 'solana'
+  ];
 
-// 🔹 Styles optionnels (modes) – influencent le ton, pas une structure fixe
-const MODE_STYLES = {
-  pro: `
-STYLE: Analyste professionnel.
-- Ton sérieux, structuré, concis.
-- Tu peux utiliser quelques titres/bullets si ça aide la compréhension.
-`.trim(),
+  if (financeKeywords.some(k => lower.includes(k))) return true;
 
-  yt: `
-STYLE: Créateur YouTube finance.
-- Ton dynamique et pédagogique, avec quelques emojis (🔥📈📉⚠️) mais sans abus.
-- Tu vulgarises pour que ça reste accessible.
-`.trim(),
+  // Mot en MAJUSCULES type ticker : NVDA, APLD, TSLA, BTC…
+  const tickerRegex = /\b[A-Z]{2,6}\b/;
+  if (tickerRegex.test(text)) return true;
 
-  buffett: `
-STYLE: Investisseur long terme (type Warren Buffett).
-- Tu te concentres surtout sur le business, le long terme, la qualité de l'entreprise.
-- Ton posé, calme, sans panique court terme.
-`.trim(),
+  // Prix / pourcentage
+  const hasDollarOrPercent = /\d+(\.\d+)?\s?(€|\$|%|pourcent)/i.test(text);
+  if (hasDollarOrPercent) return true;
 
-  technical: `
-STYLE: Trader technique.
-- Tu te concentres surtout sur le graphique : tendance, supports, résistances, indicateurs.
-- Tu restes dans le domaine de l'analyse technique, sans trop parler de fondamentaux.
-`.trim(),
+  // Si le frontend a déjà un titre sélectionné
+  if (data && data.stockInfo && data.stockInfo.symbol) return true;
 
-  short: `
-STYLE: Réponse ultra courte.
-- Maximum 5 à 8 phrases.
-- Pas de titres, pas de listes, tu vas droit au but.
-`.trim(),
-};
+  return false;
+}
 
+function buildStyleInstruction(mode) {
+  switch (mode) {
+    case 'yt':
+    case 'youtubeur':
+      return "Parle comme un YouTubeur finance énergique, en tutoyant, avec des exemples concrets et un ton dynamique.";
+    case 'buffett':
+      return "Parle comme un investisseur value à la Warren Buffett : calme, long terme, axé sur les fondamentaux, sans sensationnalisme.";
+    case 'technical':
+    case 'technique':
+      return "Fais surtout de l’analyse technique : tendance, supports/résistances, volumes, RSI, etc., mais explique simplement.";
+    case 'short':
+    case 'ultra court':
+      return "Réponds en 3–4 phrases maximum, très concises et directes.";
+    default:
+      return "Réponds comme un analyste professionnel mais pédagogique, en français simple.";
+  }
+}
+
+// -------- Handler --------
 export async function POST(req) {
+  if (!process.env.GEMINI_API_KEY) {
+    return NextResponse.json(
+      { error: "Clé GEMINI_API_KEY manquante dans les variables d'environnement." },
+      { status: 500 }
+    );
+  }
+
+  let messages = [];
+  let data = {};
+  let mode = 'pro';
+
   try {
     const body = await req.json();
+    messages = body.messages || [];
+    data = body.data || {};
+    mode = body.mode || 'pro';
+  } catch (e) {
+    return NextResponse.json(
+      { error: "Requête mal formée (JSON invalide ou corps vide)." },
+      { status: 400 }
+    );
+  }
 
-    const allMessages = Array.isArray(body?.messages) ? body.messages : [];
-    const data = body?.data || {};
-    const mode = body?.mode && MODE_STYLES[body.mode] ? body.mode : "pro";
-    const modeStyle = MODE_STYLES[mode] || MODE_STYLES.pro;
+  // Dernier message utilisateur
+  const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
+  const lastText = lastUserMsg ? (lastUserMsg.content || '') : '';
 
-    if (!process.env.GEMINI_API_KEY) {
-      return NextResponse.json(
-        { error: "Clé Gemini manquante" },
-        { status: 500 }
-      );
-    }
+  // Si ce n'est clairement PAS une question finance → on refuse
+  if (!isFinanceQuestion(lastText, data)) {
+    return NextResponse.json({
+      text:
+        "Je suis spécialisé uniquement sur les actions, cryptos, ETF et marchés financiers.\n\n" +
+        "Pose-moi une question BOURSE, par exemple :\n" +
+        "• \"Que penses-tu de APLD à court terme ?\"\n" +
+        "• \"Cette action est-elle chère par rapport à ses bénéfices ?\"\n" +
+        "• \"Comment diversifier mon portefeuille ?\"",
+      id: 'not-finance',
+      role: 'assistant',
+    });
+  }
 
+  // Contexte du titre sélectionné dans ton dashboard
+  const contextStock = data.stockInfo
+    ? `Titre suivi dans le dashboard : ${data.stockInfo.symbol}, prix ≈ ${data.stockInfo.price} USD, variation récente ≈ ${data.stockInfo.changePercent}%.`
+    : "Aucun titre spécifique sélectionné dans le dashboard (utilise seulement la question de l'utilisateur).";
+
+  const styleInstruction = buildStyleInstruction(mode);
+
+  const systemPrompt = `
+Tu es un assistant 100% spécialisé en bourse (actions, indices, ETF, cryptos).
+
+Règles :
+- Tu refuses poliment de répondre aux questions qui ne sont pas liées aux marchés financiers.
+- Tu n'indiques jamais explicitement "achète" ou "vends". Tu parles plutôt de scénarios, de risques et de points à surveiller.
+- Tu expliques clairement, comme à un étudiant niveau débutant/intermédiaire.
+- Tu réponds toujours en français.
+
+Style actuel : ${styleInstruction}
+
+Contexte fourni par le dashboard :
+${contextStock}
+`;
+
+  try {
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-    // 🔹 Modèle Gemini
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash-lite",
-      systemInstruction: `
-${BASE_PROMPT}
-
-${modeStyle}
-
-Contexte éventuel de l'action (si présent) :
-${
-  data?.stockInfo
-    ? `- Symbole : ${data.stockInfo.symbol}
-- Prix actuel : ${data.stockInfo.price} $
-- Variation récente : ${data.stockInfo.changePercent}%`
-    : `Aucune action spécifique n'est fournie, tu réponds en fonction de la question.`
-}
-`.trim(),
-    });
-
-    // 🔹 Historique : tout sauf le dernier message (le dernier = message actuel)
-    const historyMessages = allMessages.slice(0, -1);
-    const lastMessage = allMessages[allMessages.length - 1];
-
-    const history = historyMessages
-      .filter((m) => m && typeof m.content === "string")
-      .map((m) => ({
-        role: m.role === "assistant" ? "model" : "user",
-        parts: [{ text: m.content }],
-      }));
-
-    const userText =
-      (lastMessage && lastMessage.content) ||
-      "Réponds à la question de l'utilisateur sur la bourse.";
-
-    const chat = model.startChat({
-      history,
-      generationConfig: {
-        temperature: 0.5,          // un peu de variété, mais pas trop random
-        maxOutputTokens: 800,
+    // On envoie : 1) le "pseudo-system" en premier, 2) tout l'historique.
+    const contents = [
+      {
+        role: "user",
+        parts: [{ text: systemPrompt }],
       },
-    });
+      ...messages
+        .filter(m => m.role === 'user' || m.role === 'assistant')
+        .map(m => ({
+          role: m.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: m.content }],
+        })),
+    ];
 
-    const result = await chat.sendMessage(userText);
-    const aiText = result.response.text();
+    const result = await model.generateContent({ contents });
+    const response = result.response;
+    const text = response.text();
 
     return NextResponse.json({
-      text: aiText,
-      id: `gemini-${mode}-${Date.now()}`,
-      role: "assistant",
+      text,
+      id: Date.now().toString(),
+      role: 'assistant',
     });
   } catch (error) {
-    console.error("Erreur Gemini:", error);
+    console.error("ERREUR CRITIQUE [API CHAT / GEMINI]:", error);
     return NextResponse.json(
       { error: error.message || "Erreur inconnue de l'API Gemini" },
       { status: 500 }
