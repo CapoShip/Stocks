@@ -54,10 +54,11 @@ Si l'utilisateur ne parle pas de bourse, réponds normalement en français.
       ...history,
     ];
 
-    const response = await generateText({
-      model: groq('llama2-70b-4096'),
-      messages: finalMessages,
-    });
+  const response = await generateText({
+  model: groq('llama-3.3-70b-versatile'),
+  messages: finalMessages,
+  });
+
 
     return NextResponse.json({
       text: response.text,
