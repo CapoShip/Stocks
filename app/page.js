@@ -1,13 +1,41 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
 } from 'recharts';
 import {
-  Activity, Search, Trash2, RefreshCw, Briefcase, Globe, BarChart2, Layers, GitCompare, ExternalLink,
-  Bot, Sparkles, ArrowRight, Star, TrendingUp, TrendingDown, ChevronDown, ChevronUp, ArrowLeft, X,
-  Cpu, Landmark, Car, Heart, Coins
+  Activity,
+  Search,
+  Trash2,
+  RefreshCw,
+  Briefcase,
+  Globe,
+  BarChart2,
+  Layers,
+  GitCompare,
+  ExternalLink,
+  Bot,
+  Sparkles,
+  ArrowRight,
+  Star,
+  TrendingUp,
+  TrendingDown,
+  ChevronDown,
+  ChevronUp,
+  ArrowLeft,
+  X,
+  Cpu,
+  Landmark,
+  Car,
+  Heart,
+  Coins,
 } from 'lucide-react';
 
 // --- CONFIGURATION ---
@@ -20,48 +48,48 @@ const TIME_RANGES = {
 };
 
 const MARKET_SECTORS = {
-  'Technologie': ['AAPL', 'MSFT', 'NVDA', 'AMD', 'GOOGL', 'META'],
-  'Finance': ['JPM', 'BAC', 'V', 'MA', 'GS'],
-  'Auto': ['TSLA', 'F', 'GM', 'TM', 'RACE'],
-  'Santé': ['JNJ', 'PFE', 'LLY', 'MRK'],
-  'Crypto': ['BTC-USD', 'ETH-USD', 'SOL-USD', 'DOGE-USD']
+  Technologie: ['AAPL', 'MSFT', 'NVDA', 'AMD', 'GOOGL', 'META'],
+  Finance: ['JPM', 'BAC', 'V', 'MA', 'GS'],
+  Auto: ['TSLA', 'F', 'GM', 'TM', 'RACE'],
+  Santé: ['JNJ', 'PFE', 'LLY', 'MRK'],
+  Crypto: ['BTC-USD', 'ETH-USD', 'SOL-USD', 'DOGE-USD'],
 };
 
 const SECTOR_STYLES = {
-  'Technologie': {
+  Technologie: {
     icon: Cpu,
     color: 'text-cyan-400',
     bg: 'bg-cyan-500/10',
     border: 'hover:border-cyan-500/50',
-    gradient: 'from-cyan-500/20'
+    gradient: 'from-cyan-500/20',
   },
-  'Finance': {
+  Finance: {
     icon: Landmark,
     color: 'text-emerald-400',
     bg: 'bg-emerald-500/10',
     border: 'hover:border-emerald-500/50',
-    gradient: 'from-emerald-500/20'
+    gradient: 'from-emerald-500/20',
   },
-  'Auto': {
+  Auto: {
     icon: Car,
     color: 'text-orange-400',
     bg: 'bg-orange-500/10',
     border: 'hover:border-orange-500/50',
-    gradient: 'from-orange-500/20'
+    gradient: 'from-orange-500/20',
   },
-  'Santé': {
+  Santé: {
     icon: Heart,
     color: 'text-pink-400',
     bg: 'bg-pink-500/10',
     border: 'hover:border-pink-500/50',
-    gradient: 'from-pink-500/20'
+    gradient: 'from-pink-500/20',
   },
-  'Crypto': {
+  Crypto: {
     icon: Coins,
     color: 'text-purple-400',
     bg: 'bg-purple-500/10',
     border: 'hover:border-purple-500/50',
-    gradient: 'from-purple-500/20'
+    gradient: 'from-purple-500/20',
   },
 };
 
@@ -69,9 +97,9 @@ const formatNumber = (num) => {
   if (!num && num !== 0) return '-';
   const n = parseFloat(num);
   if (Number.isNaN(n)) return '-';
-  if (n >= 1.0e+12) return (n / 1.0e+12).toFixed(2) + 'T';
-  if (n >= 1.0e+9) return (n / 1.0e+9).toFixed(2) + 'B';
-  if (n >= 1.0e+6) return (n / 1.0e+6).toFixed(2) + 'M';
+  if (n >= 1.0e12) return (n / 1.0e12).toFixed(2) + 'T';
+  if (n >= 1.0e9) return (n / 1.0e9).toFixed(2) + 'B';
+  if (n >= 1.0e6) return (n / 1.0e6).toFixed(2) + 'M';
   return n.toFixed(2);
 };
 
@@ -90,7 +118,10 @@ const timeAgo = (timestamp) => {
     const seconds = Math.floor((new Date() - date) / 1000);
     let interval = seconds / 3600;
     if (interval > 24) {
-      return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+      return date.toLocaleDateString('fr-FR', {
+        day: 'numeric',
+        month: 'short',
+      });
     }
     if (interval > 1) return 'Il y a ' + Math.floor(interval) + ' h';
     interval = seconds / 60;
@@ -133,7 +164,7 @@ export default function StockApp() {
   const [compareData, setCompareData] = useState([]);
   const [loadingCompare, setLoadingCompare] = useState(false);
 
-  // --- IA CONFIGURATION (MANUEL & NON-STREAMING) ---
+  // --- IA (manuel / non streaming) ---
   const [showAI, setShowAI] = useState(false);
   const [userText, setUserText] = useState('');
   const [messages, setMessages] = useState([]);
@@ -156,7 +187,6 @@ export default function StockApp() {
         }
       : {};
 
-    // Ajout côté UI
     const userMessage = { id: Date.now(), role: 'user', content: textToSend };
     setMessages((prev) => [...prev, userMessage]);
     setUserText('');
@@ -172,8 +202,6 @@ export default function StockApp() {
         body: JSON.stringify({
           messages: currentMessages,
           data: stockPayload,
-          // tu peux envoyer ton mode ici si tu veux (Analyste Pro / Buffett / etc.)
-          // mode: 'pro'
         }),
       });
 
@@ -204,7 +232,7 @@ export default function StockApp() {
     if (showAI) chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, showAI]);
 
-  // --- STOCK DATA ---
+  // --- DATA STOCKS ---
 
   const fetchStockData = async (symbol, rangeKey) => {
     setLoading(true);
@@ -215,7 +243,9 @@ export default function StockApp() {
     const { range, interval } = rangeConfig;
 
     try {
-      const res = await fetch(`/api/stock?symbol=${symbol}&range=${range}&interval=${interval}`);
+      const res = await fetch(
+        `/api/stock?symbol=${symbol}&range=${range}&interval=${interval}`
+      );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
@@ -356,12 +386,32 @@ export default function StockApp() {
 
   const formatXAxis = (timestamp) => {
     const date = new Date(timestamp);
-    if (activeRange === '1J')
+    if (activeRange === '1J') {
       return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    if (activeRange === '1S' || activeRange === '5J')
+    }
+    if (activeRange === '1S' || activeRange === '5J') {
       return date.toLocaleDateString([], { weekday: 'short' });
+    }
     return date.toLocaleDateString([], { day: 'numeric', month: 'short' });
   };
+
+  // 🔥 Haut / Bas de la période affichée (en fonction du timeframe)
+  const { periodHigh, periodLow } = useMemo(() => {
+    if (!chartData || chartData.length === 0) {
+      return { periodHigh: null, periodLow: null };
+    }
+
+    let min = chartData[0].prix;
+    let max = chartData[0].prix;
+
+    for (const point of chartData) {
+      if (typeof point.prix !== 'number') continue;
+      if (point.prix < min) min = point.prix;
+      if (point.prix > max) max = point.prix;
+    }
+
+    return { periodHigh: max, periodLow: min };
+  }, [chartData]);
 
   return (
     <div className="flex h-screen bg-slate-950 text-slate-100 font-sans overflow-hidden">
@@ -462,7 +512,7 @@ export default function StockApp() {
           {/* DASHBOARD */}
           {activeTab === 'dashboard' && stockInfo && (
             <div className="space-y-6 max-w-7xl mx-auto pb-20 animate-in fade-in duration-500">
-              {/* Header principal */}
+              {/* Header */}
               <div className="flex flex-col md:flex-row justify-between items-end gap-4">
                 <div>
                   <h1 className="text-3xl font-bold text-white flex items-center gap-3">
@@ -529,26 +579,33 @@ export default function StockApp() {
                 </div>
               </div>
 
-              {/* QUICK STATS */}
+              {/* QUICK STATS basées sur le timeframe */}
               <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-5 gap-3 mt-4">
+                {/* Haut période */}
                 <div className="bg-slate-900/70 border border-slate-800 rounded-xl p-3 flex flex-col gap-1">
-                  <span className="text-xs text-slate-500">Haut du jour</span>
+                  <span className="text-xs text-slate-500">
+                    {activeRange === '1J'
+                      ? 'Haut du jour'
+                      : `Haut (${TIME_RANGES[activeRange]?.label || activeRange})`}
+                  </span>
                   <span className="text-sm font-mono">
-                    {stockInfo.dayHigh
-                      ? `$${stockInfo.dayHigh.toFixed(2)}`
-                      : '—'}
+                    {periodHigh !== null ? `$${periodHigh.toFixed(2)}` : '—'}
                   </span>
                 </div>
 
+                {/* Bas période */}
                 <div className="bg-slate-900/70 border border-slate-800 rounded-xl p-3 flex flex-col gap-1">
-                  <span className="text-xs text-slate-500">Bas du jour</span>
+                  <span className="text-xs text-slate-500">
+                    {activeRange === '1J'
+                      ? 'Bas du jour'
+                      : `Bas (${TIME_RANGES[activeRange]?.label || activeRange})`}
+                  </span>
                   <span className="text-sm font-mono">
-                    {stockInfo.dayLow
-                      ? `$${stockInfo.dayLow.toFixed(2)}`
-                      : '—'}
+                    {periodLow !== null ? `$${periodLow.toFixed(2)}` : '—'}
                   </span>
                 </div>
 
+                {/* Volume */}
                 <div className="bg-slate-900/70 border border-slate-800 rounded-xl p-3 flex flex-col gap-1">
                   <span className="text-xs text-slate-500">Volume</span>
                   <span className="text-sm font-mono">
@@ -558,6 +615,7 @@ export default function StockApp() {
                   </span>
                 </div>
 
+                {/* 52 sem range */}
                 <div className="bg-slate-900/70 border border-slate-800 rounded-xl p-3 flex flex-col gap-1">
                   <span className="text-xs text-slate-500">52 sem. range</span>
                   <span className="text-xs font-mono">
@@ -569,10 +627,9 @@ export default function StockApp() {
                   </span>
                 </div>
 
+                {/* Beta */}
                 <div className="hidden xl:flex bg-slate-900/70 border border-slate-800 rounded-xl p-3 flex-col gap-1">
-                  <span className="text-xs text-slate-500">
-                    Beta (volatilité)
-                  </span>
+                  <span className="text-xs text-slate-500">Beta (volatilité)</span>
                   <span className="text-sm font-mono">
                     {stockInfo.beta ? stockInfo.beta.toFixed(2) : '—'}
                   </span>
@@ -647,12 +704,9 @@ export default function StockApp() {
                           borderRadius: '8px',
                         }}
                         itemStyle={{
-                          color:
-                            stockInfo.change >= 0 ? '#4ade80' : '#f87171',
+                          color: stockInfo.change >= 0 ? '#4ade80' : '#f87171',
                         }}
-                        labelFormatter={(ts) =>
-                          new Date(ts).toLocaleString()
-                        }
+                        labelFormatter={(ts) => new Date(ts).toLocaleString()}
                         formatter={(v) => [v.toFixed(2), 'Prix']}
                         cursor={{
                           stroke: '#64748b',
@@ -680,11 +734,9 @@ export default function StockApp() {
                 {/* Fondamentaux */}
                 <div className="bg-slate-900 rounded-2xl p-6 border border-slate-800 h-fit">
                   <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-                    <Briefcase size={18} className="text-blue-400" />{' '}
-                    Fondamentaux
+                    <Briefcase size={18} className="text-blue-400" /> Fondamentaux
                   </h3>
                   <div className="space-y-4 text-sm">
-                    {/* Profil du titre */}
                     <div className="flex items-center justify-between pb-2 border-b border-slate-800">
                       <span className="text-slate-400">Profil</span>
                       <span className="text-[11px] px-2 py-1 rounded-full bg-slate-800 text-slate-200 font-medium">
@@ -845,7 +897,6 @@ export default function StockApp() {
                       }}
                       className="bg-slate-900 border border-slate-800 rounded-2xl p-6 relative overflow-hidden cursor-pointer hover:border-blue-500 hover:bg-slate-900/90 transition-all group"
                     >
-                      {/* Halo */}
                       <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
                         <div className="absolute -top-10 -right-10 w-32 h-32 bg-blue-500/15 rounded-full blur-3xl" />
                       </div>
@@ -909,7 +960,8 @@ export default function StockApp() {
                     </button>
                     {(() => {
                       const style =
-                        SECTOR_STYLES[selectedSector] || SECTOR_STYLES['Technologie'];
+                        SECTOR_STYLES[selectedSector] ||
+                        SECTOR_STYLES['Technologie'];
                       const Icon = style.icon;
                       return (
                         <h2
@@ -983,8 +1035,7 @@ export default function StockApp() {
                       Exploration par Secteur
                     </h2>
                     <p className="text-slate-500">
-                      Découvrez les opportunités dans les différentes
-                      industries.
+                      Découvrez les opportunités dans les différentes industries.
                     </p>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
