@@ -123,7 +123,15 @@ ${contextStock}
 
   try {
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+// modèle rapide + pas cher
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+
+// si jamais ça donne encore 404, essaie à la place :
+// const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
+// ou en dernier recours (très ancien mais compatible) :
+// const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+
 
     // On envoie : 1) le "pseudo-system" en premier, 2) tout l'historique.
     const contents = [
