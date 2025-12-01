@@ -13,12 +13,12 @@ import {
   RefreshCw,
 } from 'lucide-react';
 
-// ---------- Config Gamble (100% auto via all-tickers) ----------
+// ---------- Config Gamble ----------
 
-const MIN_GAMBLE_UPSIDE = 100;     // % minimum ex: 100 = x2, 150 = x2.5
-const MAX_GAMBLE_RESULTS = 120;    // on affiche les 120 meilleurs pour l’UI
+const MIN_GAMBLE_UPSIDE = 100;   // % minimum (100 = x2)
+const MAX_GAMBLE_RESULTS = 120;  // max actions affichées
 
-// ---------- Helpers d'affichage ----------
+// ---------- Helpers ----------
 
 const formatNumber = (num) => {
   if (num === null || num === undefined) return '-';
@@ -37,7 +37,7 @@ const formatSigned = (num) => {
   return (n > 0 ? '+' : '') + n.toFixed(2);
 };
 
-// ---------- Crypto : liste de tickers (Yahoo ne donne pas de sector pour crypto) ----------
+// ---------- Crypto (liste statique) ----------
 
 const CRYPTO_TICKERS = [
   'BTC-USD',
@@ -50,11 +50,10 @@ const CRYPTO_TICKERS = [
   'LINK-USD',
 ];
 
-// Liste des secteurs visibles dans l’UI
+// Tous les secteurs visibles
 const ALL_SECTORS = ['Technologie', 'Finance', 'Auto', 'Santé', 'Crypto', 'Gamble'];
 
-// ---------- Styles visuels par secteur ----------
-
+// Styles par secteur
 const SECTOR_STYLES = {
   Technologie: {
     icon: Cpu,
@@ -100,7 +99,7 @@ const SECTOR_STYLES = {
   },
 };
 
-// ---------- Matching d’un stock -> secteur custom ----------
+// ---------- Matching Yahoo -> secteur custom ----------
 
 function matchesSector(label, yahooSector = '', yahooIndustry = '') {
   const sector = (yahooSector || '').toLowerCase();
@@ -144,7 +143,7 @@ function matchesSector(label, yahooSector = '', yahooIndustry = '') {
   }
 }
 
-// ---------- Composant principal ----------
+// ---------- Composant ----------
 
 export default function SectorsTab({ onSelectStock }) {
   const [selectedSector, setSelectedSector] = useState(null);
@@ -157,31 +156,40 @@ export default function SectorsTab({ onSelectStock }) {
   const [loading, setLoading] = useState(false);
 
   const [sectorMinMktCap, setSectorMinMktCap] = useState(0);
-  const [sectorSortBy, setSectorSortBy] = useState('mktCap'); // mktCap | price | changePercent
+  const [sectorSortBy, setSectorSortBy] = useState('mktCap');
 
-  // --------- Charge TOUTES les tickers via /api/all-tickers ---------
+  // --------- /api/all-tickers : renvoie la LISTE directement ---------
 
   const fetchAllTickers = async () => {
-    if (allTickers.length > 0 || allTickersLoading) return;
+    // si déjà chargés -> on réutilise
+    if (allTickers.length > 0) return allTickers;
 
     setAllTickersLoading(true);
     setAllTickersError(null);
 
     try {
-      // Tu peux augmenter count si ton backend suit (ex: 8000)
       const res = await fetch('/api/all-tickers?count=5000');
       const data = await res.json();
-      const list = Array.isArray(data.tickers) ? data.tickers : [];
+
+      // on accepte plusieurs formats possibles
+      let list = [];
+      if (Array.isArray(data.tickers)) list = data.tickers;
+      else if (Array.isArray(data.symbols)) list = data.symbols;
+      else if (Array.isArray(data)) list = data;
+
       setAllTickers(list);
+      return list;
     } catch (e) {
       console.error('Erreur /api/all-tickers:', e);
       setAllTickersError(e.message || 'Erreur all-tickers');
+      setAllTickers([]);
+      return [];
     } finally {
       setAllTickersLoading(false);
     }
   };
 
-  // --------- Helper: /api/stock pour une liste de symboles ---------
+  // --------- /api/stock pour une liste ---------
 
   const fetchMultipleStocks = async (symbols) => {
     if (!symbols || symbols.length === 0) return [];
@@ -210,16 +218,14 @@ export default function SectorsTab({ onSelectStock }) {
     return result;
   };
 
-  // --------- Charge un secteur avec ALL TICKERS + filtre secteur ----------
+  // --------- Secteurs classiques via ALL TICKERS ----------
 
   const loadSectorFromAllTickers = async (label) => {
     setLoading(true);
     setSectorData([]);
 
     try {
-      await fetchAllTickers();
-      const symbols = allTickers;
-
+      const symbols = await fetchAllTickers();   // ✅ récupère la vraie liste
       if (!symbols || symbols.length === 0) {
         setSectorData([]);
         setLoading(false);
@@ -242,10 +248,9 @@ export default function SectorsTab({ onSelectStock }) {
 
         batchResults.forEach((r) => {
           if (!r || r.error) return;
-          const ok = matchesSector(label, r.sector, r.industry);
-          if (ok && (r.price || r.price === 0)) {
-            collected.push(r);
-          }
+          if (!matchesSector(label, r.sector, r.industry)) return;
+          if (!(r.price || r.price === 0)) return;
+          collected.push(r);
         });
       }
 
@@ -258,12 +263,11 @@ export default function SectorsTab({ onSelectStock }) {
     }
   };
 
-  // --------- Crypto (liste statique, données auto) ---------
+  // --------- Crypto ----------
 
   const loadCrypto = async () => {
     setLoading(true);
     setSectorData([]);
-
     try {
       const data = await fetchMultipleStocks(CRYPTO_TICKERS);
       setSectorData(data);
@@ -275,16 +279,14 @@ export default function SectorsTab({ onSelectStock }) {
     }
   };
 
-  // --------- Gamble 100% auto : scan ALL TICKERS + filtre upside ---------
+  // --------- Gamble : ALL TICKERS + upside >= MIN_GAMBLE_UPSIDE ----------
 
   const loadGamble = async () => {
     setLoading(true);
     setSectorData([]);
 
     try {
-      await fetchAllTickers();
-      const symbols = allTickers;
-
+      const symbols = await fetchAllTickers();   // ✅ récupère la vraie liste
       if (!symbols || symbols.length === 0) {
         setSectorData([]);
         setLoading(false);
@@ -311,7 +313,6 @@ export default function SectorsTab({ onSelectStock }) {
           if (d.targetPrice <= d.price) return;
 
           const upside = ((d.targetPrice - d.price) / d.price) * 100;
-
           if (upside >= MIN_GAMBLE_UPSIDE) {
             collected.push({ ...d, upside });
           }
@@ -328,7 +329,7 @@ export default function SectorsTab({ onSelectStock }) {
     }
   };
 
-  // --------- Réagit au changement de secteur sélectionné ---------
+  // --------- Réagit au secteur sélectionné ----------
 
   useEffect(() => {
     if (!selectedSector) return;
@@ -338,13 +339,12 @@ export default function SectorsTab({ onSelectStock }) {
     } else if (selectedSector === 'Gamble') {
       loadGamble();
     } else {
-      // Technologie / Finance / Auto / Santé
       loadSectorFromAllTickers(selectedSector);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSector]);
 
-  // --------- Filtres / tri (hors Gamble) ---------
+  // --------- Filtres / tri ----------
 
   const filteredSectorData = useMemo(() => {
     let data = [...sectorData];
@@ -379,7 +379,7 @@ export default function SectorsTab({ onSelectStock }) {
 
   // ==================== RENDER ====================
 
-  // 1) Vue liste des secteurs
+  // Liste des secteurs
   if (!selectedSector) {
     return (
       <div className="max-w-6xl mx-auto animate-in zoom-in duration-300">
@@ -448,7 +448,7 @@ export default function SectorsTab({ onSelectStock }) {
     );
   }
 
-  // 2) Vue détail d'un secteur
+  // Détail d'un secteur
 
   const style = SECTOR_STYLES[selectedSector] || SECTOR_STYLES.Technologie;
   const Icon = style.icon;
@@ -473,7 +473,6 @@ export default function SectorsTab({ onSelectStock }) {
         </h2>
       </div>
 
-      {/* Filtres uniquement pour les secteurs "classiques" */}
       {selectedSector !== 'Crypto' && selectedSector !== 'Gamble' && (
         <div className="flex flex-wrap gap-4 mb-6 items-center">
           <div className="flex items-center gap-2 text-sm">
@@ -522,17 +521,15 @@ export default function SectorsTab({ onSelectStock }) {
           {filteredSectorData.map((d) => {
             const upsideLabel =
               selectedSector === 'Gamble' && d.upside != null
-                ? `Potentiel cible: ${
-                    d.upside > 0 ? '+' : ''
-                  }${d.upside.toFixed(0)}%`
+                ? `Potentiel cible: ${d.upside > 0 ? '+' : ''}${d.upside.toFixed(
+                    0
+                  )}%`
                 : null;
 
             return (
               <div
                 key={d.symbol}
-                onClick={() => {
-                  if (onSelectStock) onSelectStock(d.symbol);
-                }}
+                onClick={() => onSelectStock && onSelectStock(d.symbol)}
                 className="bg-slate-900/50 backdrop-blur border border-slate-800 rounded-xl p-5 cursor-pointer hover:border-blue-500 hover:bg-slate-900 transition-all group flex flex-col justify-between h-32 relative overflow-hidden"
               >
                 <div className="absolute top-0 right-0 w-20 h-20 bg-blue-500/5 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none" />
