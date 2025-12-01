@@ -12,6 +12,7 @@ export async function GET(request) {
   }
 
   try {
+    // --- FIX TURBOPACK / ESM ---
     let yf = yahooFinance;
     // @ts-ignore
     if (yf.default) yf = yf.default;
@@ -20,8 +21,9 @@ export async function GET(request) {
       yf = new yf();
     }
     if (yf.suppressNotices) yf.suppressNotices(['yahooSurvey']);
+    // ----------------------------
 
-    // 1. Récupération Données
+    // 1. Récupération quote + summary + news
     const [quote, quoteSummary, searchResult] = await Promise.all([
       yf.quote(symbol),
       yf.quoteSummary(symbol, {
@@ -29,20 +31,20 @@ export async function GET(request) {
           'summaryProfile',
           'financialData',
           'defaultKeyStatistics',
-          'recommendationTrend',
+          'price',
         ],
       }),
       yf.search(symbol, { newsCount: 10 }),
     ]);
 
-    // 2. Historique avec dates calculées
+    // 2. Historique pour le graphique
     const today = new Date();
     const period1 = new Date(today);
 
     switch (range) {
       case '1d':
         period1.setDate(today.getDate() - 5);
-        break; // On prend large pour week-end
+        break;
       case '5d':
         period1.setDate(today.getDate() - 7);
         break;
@@ -69,31 +71,24 @@ export async function GET(request) {
     };
 
     const chartResult = await yf.chart(symbol, queryOptions);
-    let historical = chartResult && Array.isArray(chartResult.quotes)
-      ? chartResult.quotes
-      : [];
+    let historical = chartResult && chartResult.quotes ? chartResult.quotes : [];
 
-    // NETTOYAGE CRITIQUE POUR LE GRAPHIQUE
+    // Nettoyage : pas de valeurs nulles, triées par date
     historical = historical
       .filter(
-        (row) =>
-          row.date &&
-          row.close !== null &&
-          row.close !== undefined
+        (row) => row.date && row.close !== null && row.close !== undefined
       )
-      .sort(
-        (a, b) => new Date(a.date) - new Date(b.date)
-      );
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
 
-    // Calcul Variation
+    // Variation dynamique
+    const currentPrice = quote.regularMarketPrice;
     let dynamicChange = 0;
     let dynamicChangePercent = 0;
-    const currentPrice = quote.regularMarketPrice;
 
     if (range === '1d' || range === '1J') {
       dynamicChange = quote.regularMarketChange;
       dynamicChangePercent = quote.regularMarketChangePercent;
-    } else if (historical.length > 0 && currentPrice != null) {
+    } else if (historical.length > 0 && currentPrice) {
       const startPrice = historical[0].close;
       dynamicChange = currentPrice - startPrice;
       dynamicChangePercent = (dynamicChange / startPrice) * 100;
@@ -102,30 +97,48 @@ export async function GET(request) {
     const summary = quoteSummary.summaryProfile || {};
     const finance = quoteSummary.financialData || {};
     const stats = quoteSummary.defaultKeyStatistics || {};
+    const priceModule = quoteSummary.price || {};
 
-    // 🔐 sécurisation du .map sur les news
-    const rawNews = Array.isArray(searchResult?.news)
-      ? searchResult.news
-      : [];
-
-    const cleanNews = rawNews.map((n) => ({
+    const cleanNews = (searchResult.news || []).map((n) => ({
       uuid: n.uuid,
       link: n.link,
       title: n.title,
       publisher: n.publisher,
-      providerPublishTime:
-        n.providerPublishTime || Date.now() / 1000,
+      providerPublishTime: n.providerPublishTime || Date.now() / 1000,
     }));
 
     const result = {
       symbol: quote.symbol,
-      name: quote.shortName || quote.longName,
+      name: quote.shortName || quote.longName || priceModule.longName,
       price: currentPrice,
       change: dynamicChange,
       changePercent: dynamicChangePercent,
       mktCap: quote.marketCap,
       volume: quote.regularMarketVolume,
-      peRatio: quote.trailingPE || null,
+
+      // 🔥 NOUVEAUX CHAMPS POUR REMPLIR TON DASHBOARD
+      dayHigh:
+        quote.regularMarketDayHigh ??
+        quote.dayHigh ??
+        priceModule.regularMarketDayHigh ??
+        null,
+      dayLow:
+        quote.regularMarketDayLow ??
+        quote.dayLow ??
+        priceModule.regularMarketDayLow ??
+        null,
+      fiftyTwoWeekHigh:
+        quote.fiftyTwoWeekHigh ??
+        priceModule.fiftyTwoWeekHigh ??
+        stats.fiftyTwoWeekHigh ??
+        null,
+      fiftyTwoWeekLow:
+        quote.fiftyTwoWeekLow ??
+        priceModule.fiftyTwoWeekLow ??
+        stats.fiftyTwoWeekLow ??
+        null,
+
+      peRatio: quote.trailingPE || finance.trailingPE || null,
       beta: stats.beta || null,
       sector: summary.sector || 'N/A',
       industry: summary.industry || 'N/A',
@@ -134,9 +147,10 @@ export async function GET(request) {
       targetPrice: finance.targetMeanPrice || null,
       recommendation: finance.recommendationKey || 'none',
       news: cleanNews,
+
       chart: historical.map((row) => ({
-        date: row.date, // debug
-        timestamp: new Date(row.date).getTime(), // pour l'axe X
+        date: row.date,
+        timestamp: new Date(row.date).getTime(),
         prix: row.close,
       })),
     };
@@ -144,9 +158,6 @@ export async function GET(request) {
     return NextResponse.json(result);
   } catch (error) {
     console.error(`❌ [API] Erreur ${symbol}:`, error.message);
-    return NextResponse.json(
-      { error: error.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

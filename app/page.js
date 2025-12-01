@@ -369,7 +369,7 @@ export default function StockApp() {
       <div className="w-16 md:w-64 bg-slate-900 border-r border-slate-800 flex flex-col z-30">
         <div className="p-6 text-xl font-bold text-blue-400 flex items-center gap-2">
           <Activity />
-          <span className="hidden md:block">AlphaTrade</span>
+          <span className="hidden md:block">CapoStocks</span>
         </div>
         <nav className="flex-1 px-2 space-y-2 mt-4">
           {['dashboard', 'watchlist', 'sectors', 'compare'].map((tab) => (
